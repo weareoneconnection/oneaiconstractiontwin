@@ -1,0 +1,26 @@
+# The build context is the repository root for both service images, so this file
+# decides how much gets uploaded to the builder. Keep it tight.
+.git
+.venv
+**/.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+node_modules
+**/node_modules
+.next
+**/.next
+apps/web/public/cesium
+**/.env
+**/.env.local
+*.db
+**/*.db
+data/uploads/*
+data/generated-assets/*
+data/object-store/*
+data/asset-work/*
+data/backups/*
+*.log
+.DS_Store
+.vscode
+.idea

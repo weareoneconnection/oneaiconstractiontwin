@@ -1,8 +1,10 @@
 # syntax=docker/dockerfile:1
+# Build context is the REPOSITORY ROOT, not apps/web:
+#   docker build -f apps/web/Dockerfile .
 
 FROM node:22-alpine AS deps
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY apps/web/package.json apps/web/package-lock.json ./
 # --ignore-scripts is required: the postinstall step copies Cesium runtime assets with
 # scripts/copy-cesium.mjs, which is not part of this stage's build context.
 RUN npm ci --ignore-scripts --registry=https://registry.npmjs.org
@@ -22,7 +24,7 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL} \
     NEXT_PUBLIC_USER_ID=${NEXT_PUBLIC_USER_ID} \
     NEXT_PUBLIC_ROLE=${NEXT_PUBLIC_ROLE}
 COPY --from=deps /app/node_modules ./node_modules
-COPY . .
+COPY apps/web/ ./
 RUN node scripts/copy-cesium.mjs && npm run build
 
 FROM node:22-alpine AS runner

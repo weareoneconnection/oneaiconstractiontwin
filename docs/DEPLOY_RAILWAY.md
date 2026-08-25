@@ -48,40 +48,45 @@ fallback would give each replica its own quota.
 
 ## 3. Service: `api`
 
+Both images build **from the repository root** (`docker build -f apps/api/Dockerfile .`).
+That means no root directory or config-as-code path needs to be set on Railway - a single
+variable selects which Dockerfile the service uses.
+
 | Setting | Value |
 |---|---|
 | Source | this repository |
-| **Root directory** | **`apps/api`** |
-| **Config as code path** | **`railway.json`** (relative to the root directory) |
-| Healthcheck | `/health` (already in the config file) |
+| Root directory | leave as `/` |
+| Variable `RAILWAY_DOCKERFILE_PATH` | `apps/api/Dockerfile` |
 | Public domain | generate one, e.g. `twin-api.up.railway.app` |
 
-Both settings matter. Without a root directory the build context is the repository
-root, and the Dockerfile's `COPY requirements.txt ./` finds nothing; without the config
-path Railway ignores the Dockerfile entirely and falls back to its Railpack
-auto-detector, which cannot make sense of the repository root and fails during
-`prepare`.
+Optional, under Settings → Deploy:
 
-Variables: copy `.env.railway.example`, then set `AUTO_MIGRATE=true`.
+| Field | Value |
+|---|---|
+| Healthcheck path | `/health` |
+| Restart policy | On failure, 10 retries |
 
-The healthcheck deliberately uses `/health` (liveness), not `/health/ready`. Readiness
-includes the asset worker, so pointing the platform healthcheck at it would make the API
-restart or roll back whenever the worker is down - coupling two services that should fail
-independently. Use `/health/ready` for your own monitoring instead, and note that with
-`REQUIRE_ASSET_WORKER=true` it returns 503 until the worker service is up. That is
-correct behaviour, not a deployment failure.
+Use `/health` (liveness) rather than `/health/ready` for the platform healthcheck.
+Readiness includes the asset worker, so pointing the healthcheck at it would restart or
+roll back the API whenever the worker is down - coupling two services that should fail
+independently. Keep `/health/ready` for your own monitoring; with
+`REQUIRE_ASSET_WORKER=true` it returns 503 until the worker is up, which is correct
+behaviour rather than a deployment failure.
 
-The Dockerfile's start command honours Railway's injected `$PORT` and runs uvicorn with
-`--proxy-headers --forwarded-allow-ips='*'`, which is required behind Railway's edge
-proxy.
+Variables: copy `.env.railway.example`, and set `AUTO_MIGRATE=true`.
+
+If the build log shows `railpack prepare` and a list of repository-root files, the
+`RAILWAY_DOCKERFILE_PATH` variable is missing: Railway fell back to its language
+auto-detector, which cannot interpret this repository.
 
 ## 4. Service: `asset-worker`
 
 | Setting | Value |
 |---|---|
 | Source | this repository |
-| Root directory | `apps/api` |
-| Config as code path | `railway.worker.json` |
+| Root directory | leave as `/` |
+| Variable `RAILWAY_DOCKERFILE_PATH` | `apps/api/Dockerfile` (same image as the API) |
+| Custom start command | `python -m app.workers.asset_worker` |
 | Public domain | none - this service must not be exposed |
 
 Same variables as `api`, with two changes:
@@ -102,8 +107,8 @@ killed mid-partition has its lease recovered by the next one.
 
 | Setting | Value |
 |---|---|
-| Root directory | `apps/web` |
-| Config as code path | `railway.json` |
+| Root directory | leave as `/` |
+| Variable `RAILWAY_DOCKERFILE_PATH` | `apps/web/Dockerfile` |
 | Public domain | generate one |
 
 **Set `NEXT_PUBLIC_*` as build arguments, not only as runtime variables.** Next inlines
@@ -223,5 +228,5 @@ Object storage on R2 at pilot volumes is negligible.
 | Frontend calls `127.0.0.1:8000` | `NEXT_PUBLIC_API_URL` set as a runtime variable only, not as a build argument |
 | Redirect loop | `FORCE_HTTPS=true` without `--proxy-headers` (already handled in the shipped Dockerfile) |
 | Startup error about production configuration | Expected: see the production-mode table above |
-| Build log shows `railpack prepare` and lists repository-root files | The service is not using the Dockerfile: set the config-as-code path |
-| `COPY requirements.txt: not found` during build | Root directory not set to `apps/api` (or `apps/web`) |
+| Build log shows `railpack prepare` and lists repository-root files | `RAILWAY_DOCKERFILE_PATH` is not set on the service |
+| `COPY failed: ... not found` during build | A root directory was set on the service; the Dockerfiles expect the repository root as build context |

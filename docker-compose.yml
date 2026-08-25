@@ -40,7 +40,8 @@ services:
 
   api:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     environment: &backend_env
       APP_ENV: docker
       AUTO_MIGRATE: "true"
@@ -83,7 +84,8 @@ services:
 
   asset-worker:
     build:
-      context: ./apps/api
+      context: .
+      dockerfile: apps/api/Dockerfile
     command: ["python", "-m", "app.workers.asset_worker"]
     environment:
       <<: *backend_env
@@ -98,7 +100,8 @@ services:
 
   web:
     build:
-      context: ./apps/web
+      context: .
+      dockerfile: apps/web/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     environment:
