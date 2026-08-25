@@ -27,6 +27,29 @@ from app.core.observability import HTTP_LATENCY, HTTP_REQUESTS, SECURITY_EVENTS
 log = structlog.get_logger(__name__) if structlog else logging.getLogger(__name__)
 
 
+def _default_csp() -> str:
+    """Content-Security-Policy for non-documentation responses.
+
+    `connect-src` used to hard-code http://localhost:8000, which is wrong on any
+    deployment. It is now derived from the configured origins.
+    """
+    connect = ["'self'", *settings.cors_origin_list]
+    if settings.web_base_url:
+        connect.append(settings.web_base_url)
+    if settings.public_base_url:
+        connect.append(settings.public_base_url)
+    if not settings.is_production:
+        connect += ["ws:", "wss:"]
+    else:
+        connect.append("wss:")
+    unique = list(dict.fromkeys(connect))
+    return (
+        "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
+        f"connect-src {' '.join(unique)}; "
+        "script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
+    )
+
+
 class EnterpriseMiddleware(BaseHTTPMiddleware):
     """Request IDs, security headers, HTTPS enforcement, metrics and fixed-window limiting."""
 
@@ -139,11 +162,7 @@ class EnterpriseMiddleware(BaseHTTPMiddleware):
                     "style-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; font-src 'self' https://cdn.jsdelivr.net"
                 )
             else:
-                response.headers["Content-Security-Policy"] = (
-                    "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; "
-                    "connect-src 'self' http://localhost:8000 http://127.0.0.1:8000 ws: wss:; "
-                    "script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:"
-                )
+                response.headers["Content-Security-Policy"] = _default_csp()
             if settings.force_https:
                 response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
 
