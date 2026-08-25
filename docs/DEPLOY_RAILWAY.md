@@ -51,10 +51,16 @@ fallback would give each replica its own quota.
 | Setting | Value |
 |---|---|
 | Source | this repository |
-| Root directory | `/` |
-| Config as code path | `apps/api/railway.json` |
+| **Root directory** | **`apps/api`** |
+| **Config as code path** | **`railway.json`** (relative to the root directory) |
 | Healthcheck | `/health` (already in the config file) |
 | Public domain | generate one, e.g. `twin-api.up.railway.app` |
+
+Both settings matter. Without a root directory the build context is the repository
+root, and the Dockerfile's `COPY requirements.txt ./` finds nothing; without the config
+path Railway ignores the Dockerfile entirely and falls back to its Railpack
+auto-detector, which cannot make sense of the repository root and fails during
+`prepare`.
 
 Variables: copy `.env.railway.example`, then set `AUTO_MIGRATE=true`.
 
@@ -74,8 +80,8 @@ proxy.
 | Setting | Value |
 |---|---|
 | Source | this repository |
-| Root directory | `/` |
-| Config as code path | `apps/api/railway.worker.json` |
+| Root directory | `apps/api` |
+| Config as code path | `railway.worker.json` |
 | Public domain | none - this service must not be exposed |
 
 Same variables as `api`, with two changes:
@@ -96,7 +102,8 @@ killed mid-partition has its lease recovered by the next one.
 
 | Setting | Value |
 |---|---|
-| Config as code path | `apps/web/railway.json` |
+| Root directory | `apps/web` |
+| Config as code path | `railway.json` |
 | Public domain | generate one |
 
 **Set `NEXT_PUBLIC_*` as build arguments, not only as runtime variables.** Next inlines
@@ -216,3 +223,5 @@ Object storage on R2 at pilot volumes is negligible.
 | Frontend calls `127.0.0.1:8000` | `NEXT_PUBLIC_API_URL` set as a runtime variable only, not as a build argument |
 | Redirect loop | `FORCE_HTTPS=true` without `--proxy-headers` (already handled in the shipped Dockerfile) |
 | Startup error about production configuration | Expected: see the production-mode table above |
+| Build log shows `railpack prepare` and lists repository-root files | The service is not using the Dockerfile: set the config-as-code path |
+| `COPY requirements.txt: not found` during build | Root directory not set to `apps/api` (or `apps/web`) |
