@@ -92,8 +92,8 @@ building the commit that contains it.
 |---|---|
 | Source | this repository |
 | Root directory | leave as `/` |
-| Build configuration | none - same root `Dockerfile` as the API |
-| Custom start command | `python -m app.workers.asset_worker` |
+| Config as code path | `apps/api/railway.worker.json` (sets the start command too) |
+| Custom start command | not needed - the config file sets it |
 | Public domain | none - this service must not be exposed |
 
 Same variables as `api`, with two changes:
@@ -115,12 +115,18 @@ killed mid-partition has its lease recovered by the next one.
 | Setting | Value |
 |---|---|
 | Root directory | leave as `/` |
-| Variable `RAILWAY_DOCKERFILE_PATH` | `apps/web/Dockerfile` (this service must override the root Dockerfile) |
+| **Config as code path** | **`apps/web/railway.json`** |
 | Public domain | generate one |
 
-The web service is the only one that needs a build variable, because the root
-`Dockerfile` builds the API. Set it under **Variables**, then trigger a redeploy -
-the value is read at build time, so an already-running build will not pick it up.
+The web service is the only one that needs build configuration, because the root
+`Dockerfile` builds the API. Two equivalent ways to point at the web image:
+
+- **Settings → Config as code path** = `apps/web/railway.json` (recommended - it also
+  carries the healthcheck and restart policy), or
+- **Variables** → `RAILWAY_DOCKERFILE_PATH` = `apps/web/Dockerfile`
+
+The config-as-code field expects a `.json` or `.toml` file. Putting a Dockerfile path
+there fails initialization with `invalid config-as-code file extension`.
 
 **Set `NEXT_PUBLIC_*` as build arguments, not only as runtime variables.** Next inlines
 them into the client bundle at build time; a value that exists only at runtime produces
@@ -243,5 +249,6 @@ Object storage on R2 at pilot volumes is negligible.
 | `DATABASE_URL is set but empty` | The variable reference did not resolve. Add it with **Variables → Add a Reference**, choosing the Postgres service, rather than typing `${{...}}` by hand - the service name must match exactly (it is case-sensitive) |
 | `Could not parse SQLAlchemy URL from string ''` | Same cause, on a deployment that predates the readable error |
 | Container starts then every request 400s | `TRUSTED_HOSTS` empty or missing the generated domain - it is only populated after a public domain exists |
-| Build log shows `railpack prepare` | The service is not using a Dockerfile: the API/worker need root directory `/`; the web service needs `RAILWAY_DOCKERFILE_PATH` |
+| Build log shows `railpack prepare` | The service is not using a Dockerfile: the API needs root directory `/`; the web and worker services need their config-as-code path |
+| `invalid config-as-code file extension` | A Dockerfile path was entered in the config-as-code field, which takes a `.json`/`.toml` file. Use `apps/web/railway.json`, or set `RAILWAY_DOCKERFILE_PATH` as a variable instead |
 | `COPY failed: ... not found` during build | A root directory was set on the service; the Dockerfiles expect the repository root as build context |
