@@ -173,3 +173,121 @@
   .table-row{grid-template-columns:1fr 1fr;font-size:11px}
   .audit-table .table-row{grid-template-columns:1fr 1fr}
 }
+
+/* ===========================================================================
+   Collaboration, comparison, reporting and mobile (v0.7.3)
+   ======================================================================== */
+
+/* --- comments ------------------------------------------------------------ */
+.comment-thread{display:flex;flex-direction:column;gap:10px}
+.thread-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.thread-head b{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:#8fb0ce}
+.comment{padding:11px 13px;border:1px solid #173653;border-radius:11px;background:#071421}
+.comment.resolved{opacity:.62;border-style:dashed}
+.comment.reply{margin:9px 0 0 18px;border-left:2px solid #2a5d8e;background:rgba(7,20,33,.6)}
+.comment p{margin:7px 0 0;font-size:13px;line-height:1.6}
+.comment-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.comment-author{font-weight:700;font-size:12px}
+.comment-time{font-size:10px;color:#6f8dab}
+.comment-tools{display:flex;gap:6px;margin-top:9px}
+.comment-form{display:flex;flex-direction:column;gap:8px;margin-top:4px}
+.comment-form textarea{width:100%;background:#071421;border:1px solid #1c4169;border-radius:11px;color:var(--text);padding:11px;resize:vertical;font-size:13px;line-height:1.55}
+.comment-form textarea:disabled{opacity:.55}
+.comment-form-foot{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.comment-form-foot small{font-size:10px;color:#6f8dab}
+.reply-banner{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:#8fb0ce;padding:6px 9px;border:1px dashed #2a5d8e;border-radius:9px}
+.comment-thread.compact .comment{padding:9px 11px}
+
+/* --- portfolio comparison ------------------------------------------------ */
+.compare-table .table-head,.compare-table .table-row{grid-template-columns:1.5fr 1.2fr .7fr .9fr 1fr 1.1fr .8fr}
+.compare-table .table-row{text-decoration:none;color:inherit}
+.sortable{cursor:pointer;user-select:none}
+.sortable:hover{color:var(--cyan)}
+.muted-inline{display:block;font-size:10px;color:#6f8dab}
+.bar-cell{display:flex;align-items:center;gap:8px}
+.bar{height:7px;border-radius:999px;min-width:2px;background:#2a5d8e}
+.bar.good{background:linear-gradient(90deg,#1f9d6a,#65e6b4)}
+.bar.bad{background:linear-gradient(90deg,#b4485c,#ff7d8d)}
+.bar.warn{background:linear-gradient(90deg,#a97b2b,#ffc96b)}
+.coverage-grid{display:flex;flex-direction:column;gap:8px}
+.coverage-row{display:grid;grid-template-columns:70px repeat(5,1fr);gap:8px;align-items:center}
+.coverage-cell{padding:7px 9px;border-radius:9px;border:1px solid #173653;background:#071421}
+.coverage-cell span{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#6f8dab}
+.coverage-cell.none{opacity:.45;border-style:dashed}
+.coverage-cell.has b{color:#a8f2d3}
+
+/* --- printable report ---------------------------------------------------- */
+.report-sheet{background:#08121e;border:1px solid var(--line);border-radius:16px;padding:28px}
+.report-head{display:flex;justify-content:space-between;gap:20px;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:18px}
+.report-head h1{margin:6px 0 2px;font-size:26px;letter-spacing:-.02em}
+.report-sub{color:var(--muted);font-size:12px}
+.report-stamp{text-align:right;font-size:11px;color:var(--muted);line-height:1.7}
+.report-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0 6px}
+.report-metrics span{display:block;font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#6f8dab}
+.report-metrics b{font-size:20px}
+.report-sheet section{margin-top:22px}
+.report-sheet h2{font-size:15px;margin:0 0 8px;letter-spacing:-.01em}
+.report-sheet h3{font-size:12px;margin:14px 0 6px;color:#8fb0ce}
+.report-note{font-size:12px;color:#a9c7e6;line-height:1.6;margin:6px 0}
+.report-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.report-table th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:#6f8dab;border-bottom:1px solid var(--line);padding:7px 6px}
+.report-table td{padding:7px 6px;border-bottom:1px solid rgba(29,60,98,.4)}
+.report-list{margin:6px 0;padding-left:18px;font-size:12px;line-height:1.7;color:#c3d8ee}
+.report-disclosure{display:block;margin-top:26px;padding:12px 14px;border:1px solid #8a6a31;border-radius:10px;background:rgba(184,134,11,.1);color:#f0c674;font-size:11px;line-height:1.6}
+
+@media print{
+  /* The sheet is the document; everything around it is application chrome. */
+  .sidebar,.workspace-bar,.no-print,.toast-stack,.nav-toggle{display:none!important}
+  html,body,.app-shell,.workspace,.workspace-body,.page{background:#fff!important;color:#111!important;display:block!important;padding:0!important;margin:0!important}
+  .report-sheet{border:0;border-radius:0;padding:0;background:#fff;color:#111}
+  .report-sheet h1,.report-sheet h2,.report-sheet h3,.report-metrics b{color:#111}
+  .report-sub,.report-stamp,.report-note,.report-list,.report-table td{color:#333}
+  .report-table th{color:#555;border-color:#bbb}
+  .report-table td{border-color:#ddd}
+  .report-head{border-color:#bbb}
+  .report-disclosure{border-color:#8a6a31;background:#fdf6e3;color:#6b4f10}
+  .brand-kicker{color:#0b5f86}
+  section{break-inside:avoid}
+}
+
+/* --- mobile -------------------------------------------------------------- */
+.nav-toggle{display:none;position:fixed;top:14px;left:14px;z-index:40;width:42px;height:42px;border-radius:11px;border:1px solid #2a5d8e;background:rgba(9,22,38,.95);flex-direction:column;gap:4px;align-items:center;justify-content:center;cursor:pointer}
+.nav-toggle span{display:block;width:18px;height:2px;background:#bcd8f2;border-radius:2px}
+.nav-scrim{position:fixed;inset:0;background:rgba(3,9,16,.62);z-index:30}
+
+@media(max-width:900px){
+  .nav-toggle{display:flex}
+  .app-shell{grid-template-columns:1fr}
+  /* Off-canvas drawer rather than a squashed sidebar: full-height, real touch targets. */
+  .sidebar{position:fixed;left:0;top:0;bottom:0;width:270px;height:100vh;flex-direction:column;transform:translateX(-100%);transition:transform .2s ease;z-index:35;border-right:1px solid var(--line);border-bottom:0;overflow-y:auto}
+  .app-shell.nav-open .sidebar{transform:translateX(0)}
+  .nav-group{flex-direction:column}
+  .nav-heading{display:block}
+  .nav-link{padding:12px 13px;font-size:14px}
+  .sidebar-foot{display:flex}
+  .workspace-bar{padding:14px 16px 14px 66px;flex-direction:row;align-items:center;gap:12px;flex-wrap:wrap}
+  .workspace-title h1{font-size:17px}
+  .status-cluster{gap:8px}
+  .identity-chip{padding:6px 9px}
+  .workspace-body{padding:14px 14px 32px}
+  .page{gap:12px}
+  .grid4{grid-template-columns:1fr 1fr;gap:10px}
+  .metric{padding:12px}
+  .metric-value{font-size:22px}
+
+  /* Tables become labelled cards: a six-column grid on a phone is unreadable. */
+  .table-head{display:none}
+  .table-row,.compare-table .table-row,.audit-table .table-row{display:grid;grid-template-columns:1fr;gap:6px;padding:12px;border:1px solid #173653;border-radius:12px;margin-bottom:9px;background:#071421}
+  .table-row > span{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
+  .table-row > span::before{content:attr(data-label);font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:#6f8dab}
+  .table-row > span:not([data-label])::before{content:""}
+  .coverage-row{grid-template-columns:1fr 1fr}
+  .report-head{flex-direction:column}
+  .report-stamp{text-align:left}
+  .btn{padding:11px 14px}
+  .actions{gap:8px}
+}
+@media(max-width:520px){
+  .grid4{grid-template-columns:1fr}
+  .comment.reply{margin-left:10px}
+}

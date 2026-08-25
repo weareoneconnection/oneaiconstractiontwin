@@ -93,6 +93,24 @@ Beyond the routing:
   name, calibration state, sample size, per-claim support and per-evidence relevance are
   all surfaced next to the numbers they qualify.
 
+## Collaboration, reporting and comparison (v0.7.3)
+
+- **Portfolio comparison** (`/compare`): sortable comparison of every project in scope -
+  variance, baseline delay, late and critical-late activities, worst slip, evidence
+  coverage - aggregated by a single server-side endpoint rather than one request per
+  project per metric. Projects without a schedule report zero rather than an estimate,
+  and thin data is labelled as such.
+- **Comments** on a project or on anything inside it (an agent recommendation, an
+  activity, a risk), threaded one level deep and resolvable. Resolving keeps the
+  history. Creating and resolving both write audit entries, because "who signed off on
+  this recommendation" is a question pilot reviews actually ask.
+- **Reporting**: a printable status report (`/projects/{id}/report`) with print styles
+  that drop the application chrome, plus CSV exports of activities, entities, evidence,
+  risks, comments and the audit trail. Exports are audited by dataset and row count, and
+  the audit export additionally requires `audit:read`.
+- **Mobile**: an off-canvas navigation drawer, larger touch targets, and tables that
+  become labelled cards instead of a six-column grid squeezed onto a phone.
+
 ## Test coverage
 
 31 automated tests (was 8), including regression tests for every defect above, plus

@@ -68,12 +68,12 @@ export default function AdminPage() {
             <div className="table-head"><span>Worker</span><span>Type</span><span>Status</span><span>Version</span><span>Storage</span><span>Last seen</span></div>
             {workers.map(worker => (
               <div key={worker.worker_id} className="table-row">
-                <span className="mono">{worker.worker_id}</span>
-                <span>{worker.worker_type}</span>
-                <span><Badge tone={worker.status === "online" ? "good" : "warn"}>{worker.status}</Badge></span>
-                <span>{worker.version}</span>
-                <span>{worker.meta?.storage || "—"}</span>
-                <span>{since(worker.last_seen_at)}</span>
+                <span data-label="Worker" className="mono">{worker.worker_id}</span>
+                <span data-label="Type">{worker.worker_type}</span>
+                <span data-label="Status"><Badge tone={worker.status === "online" ? "good" : "warn"}>{worker.status}</Badge></span>
+                <span data-label="Version">{worker.version}</span>
+                <span data-label="Storage">{worker.meta?.storage || "—"}</span>
+                <span data-label="Last seen">{since(worker.last_seen_at)}</span>
               </div>
             ))}
           </div>

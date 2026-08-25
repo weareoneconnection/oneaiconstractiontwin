@@ -105,6 +105,39 @@ class Evidence(Base, TenantScoped):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Comment(Base, TenantScoped):
+    """A note attached to a project or to something inside it.
+
+    Comments are how a team records judgement the data cannot hold: why an activity
+    slipped, whether an AI recommendation is sound, what was agreed on site. They are
+    tenant-scoped like every other record, threaded one level deep, and resolvable so a
+    discussion can be closed without deleting the history of it.
+    """
+
+    __tablename__ = "comments"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
+    project_id: Mapped[str] = mapped_column(String(64), ForeignKey("projects.id"), index=True)
+    #: What the comment is about: "project", "twin_entity", "activity", "risk",
+    #: "agent_action". Kept as a loose pair rather than a foreign key so a comment can
+    #: outlive the thing it discusses.
+    target_type: Mapped[str] = mapped_column(String(64), default="project", index=True)
+    target_id: Mapped[str] = mapped_column(String(64), default="", index=True)
+    parent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    body: Mapped[str] = mapped_column(Text)
+    author_id: Mapped[str] = mapped_column(String(64), index=True)
+    author_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    author_role: Mapped[str] = mapped_column(String(64), default="viewer")
+    resolved: Mapped[bool] = mapped_column(default=False, index=True)
+    resolved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    __table_args__ = (
+        Index("ix_comment_project_target", "project_id", "target_type", "target_id"),
+        Index("ix_comment_thread", "parent_id", "created_at"),
+    )
+
+
 class Risk(Base, TenantScoped):
     __tablename__ = "risks"
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)

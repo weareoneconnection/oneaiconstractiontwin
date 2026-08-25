@@ -67,3 +67,27 @@ export async function api(path, options={}, { allowRetry = true } = {}) {
 export async function authorizedResource(Cesium, url) {
   return new Cesium.Resource({ url, headers: { ...authHeaders() } });
 }
+
+/**
+ * Download an authenticated file.
+ *
+ * A plain <a href> cannot carry the Authorization header, so the bytes are fetched,
+ * turned into a blob and handed to the browser. The filename comes from the server's
+ * Content-Disposition, so exports are named consistently wherever they are triggered.
+ */
+export async function download(path) {
+  const response = await fetch(`${API}${path}`, { headers: authHeaders(), cache: "no-store" });
+  if (!response.ok) throw new Error(`${response.status} ${await response.text()}`);
+  const disposition = response.headers.get("content-disposition") || "";
+  const match = disposition.match(/filename="?([^"]+)"?/);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = match ? match[1] : path.split("/").pop();
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  return anchor.download;
+}

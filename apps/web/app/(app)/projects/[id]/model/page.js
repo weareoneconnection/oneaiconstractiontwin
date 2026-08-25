@@ -62,11 +62,11 @@ export default function ModelPage() {
             </div>
             {models.map(model => (
               <div key={model.id} className="table-row">
-                <span><b>{model.title}</b></span>
-                <span>{model.meta?.parser || "—"}</span>
-                <span>{model.meta?.element_count ?? 0}</span>
-                <span>{model.meta?.storage_backend || "—"}</span>
-                <span>{dateTime(model.created_at)}</span>
+                <span data-label="Model"><b>{model.title}</b></span>
+                <span data-label="Parser">{model.meta?.parser || "—"}</span>
+                <span data-label="Elements">{model.meta?.element_count ?? 0}</span>
+                <span data-label="Storage">{model.meta?.storage_backend || "—"}</span>
+                <span data-label="Imported">{dateTime(model.created_at)}</span>
               </div>
             ))}
           </div>

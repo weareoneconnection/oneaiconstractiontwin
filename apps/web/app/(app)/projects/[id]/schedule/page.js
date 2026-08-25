@@ -104,12 +104,12 @@ export default function SchedulePage() {
               const isLate = activity.actual_finish && activity.planned_finish && new Date(activity.actual_finish) > new Date(activity.planned_finish);
               return (
                 <div key={activity.id} className={`table-row ${selected === activity.id ? "selected" : ""}`} onClick={() => setSelected(activity.id)}>
-                  <span><b>{activity.external_id}</b>{activity.critical && <Badge tone="warn">critical</Badge>}</span>
-                  <span>{activity.name}</span>
-                  <span>{date(activity.planned_finish)}</span>
-                  <span className={isLate ? "warn" : ""}>{date(activity.actual_finish)}</span>
-                  <span>{activity.percent_complete}%</span>
-                  <span>{activity.total_float_days} d</span>
+                  <span data-label="ID"><b>{activity.external_id}</b>{activity.critical && <Badge tone="warn">critical</Badge>}</span>
+                  <span data-label="Activity">{activity.name}</span>
+                  <span data-label="Planned finish">{date(activity.planned_finish)}</span>
+                  <span data-label="Actual finish" className={isLate ? "warn" : ""}>{date(activity.actual_finish)}</span>
+                  <span data-label="Progress">{activity.percent_complete}%</span>
+                  <span data-label="Float">{activity.total_float_days} d</span>
                 </div>
               );
             })}

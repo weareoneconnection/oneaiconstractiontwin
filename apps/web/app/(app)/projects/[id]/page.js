@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api } from "../../../../lib/api";
 import { percent } from "../../../../lib/format";
 import { Card, Badge, EmptyState, Metric, Skeleton } from "../../../../components/ui";
+import CommentThread from "../../../../components/CommentThread";
 import { useProject } from "./layout";
 
 export default function ProjectOverview() {
@@ -100,6 +101,10 @@ export default function ProjectOverview() {
           </div>
         </Card>
       </div>
+
+      <Card title="Project discussion" meta="Judgement the data cannot hold — recorded, resolvable and audited">
+        <CommentThread projectId={projectId} targetType="project" />
+      </Card>
     </div>
   );
 }

@@ -70,12 +70,12 @@ export default function AuditPage() {
             {entries.map(entry => (
               <div key={entry.id}>
                 <div className="table-row" onClick={() => setExpanded(expanded === entry.id ? null : entry.id)}>
-                  <span>{entry.sequence}</span>
-                  <span><b>{entry.action}</b></span>
-                  <span>{entry.actor_id}<Badge tone={entry.actor_type === "agent" ? "warn" : "neutral"}>{entry.actor_type}</Badge></span>
-                  <span>{entry.resource_type} {shortId(entry.resource_id)}</span>
-                  <span>{dateTime(entry.created_at)}</span>
-                  <span className="mono">{entry.entry_hash?.slice(0, 10)}…</span>
+                  <span data-label="#">{entry.sequence}</span>
+                  <span data-label="Action"><b>{entry.action}</b></span>
+                  <span data-label="Actor">{entry.actor_id}<Badge tone={entry.actor_type === "agent" ? "warn" : "neutral"}>{entry.actor_type}</Badge></span>
+                  <span data-label="Resource">{entry.resource_type} {shortId(entry.resource_id)}</span>
+                  <span data-label="When">{dateTime(entry.created_at)}</span>
+                  <span data-label="Hash" className="mono">{entry.entry_hash?.slice(0, 10)}…</span>
                 </div>
                 {expanded === entry.id && (
                   <pre className="audit-detail">

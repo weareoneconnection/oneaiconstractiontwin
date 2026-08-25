@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from app.api.routes.bim import router as bim_router
+from app.api.routes.collaboration import router as collaboration_router
 from app.api.routes.demo import router as demo_router
 from app.api.routes.enterprise import router as enterprise_router
 from app.api.routes.projects import router as projects_router
@@ -92,6 +93,7 @@ app.include_router(v04_router)
 app.include_router(v05_router)
 app.include_router(v06_router)
 app.include_router(enterprise_router)
+app.include_router(collaboration_router)
 
 ASSET_ROOT.mkdir(parents=True, exist_ok=True)
 # Generated assets are NEVER served through an unauthenticated static mount: every

@@ -41,8 +41,12 @@ This is the cumulative, runnable codebase for the OneAI Construction Twin Enterp
 - Enterprise pilot status, checklist and E2E validation script
 
 ### Web application
-- Routed workspace: portfolio, project overview, BIM & 3D, schedule & 4D, intelligence,
-  audit trail, platform administration
+- Routed workspace: portfolio, cross-project comparison, project overview, BIM & 3D,
+  schedule & 4D, intelligence, audit trail, report & export, platform administration
+- Team collaboration: threaded, resolvable comments on projects and on individual
+  recommendations, recorded in the audit chain
+- Reporting: printable project status report and audited CSV exports
+- Mobile layout with an off-canvas drawer and card-based tables
 - OIDC sign-in with PKCE, session refresh and provider sign-out
 - Permission-aware controls driven by the API's own `/auth/me` response
 - Loading, empty and error states throughout; provenance shown beside every AI-derived number

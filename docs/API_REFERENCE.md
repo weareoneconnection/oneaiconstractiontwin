@@ -75,3 +75,29 @@ The authoritative interactive schema is available at `/docs` and `/openapi.json`
 `POST /api/v1/projects/{id}/simulations` adds `model`, `calibrated` and `assumptions`.
 
 `GET /api/v1/projects/{id}/audit` adds `sequence`, `prev_hash` and `entry_hash`.
+
+
+## v0.7.3 — collaboration, reporting and portfolio
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/portfolio/summary` | `project:read` | Cross-project comparison, aggregated server-side in a fixed number of queries |
+| GET | `/api/v1/projects/{id}/comments` | `project:read` | Comments on the project or on something inside it (`target_type`, `target_id`, `include_resolved`) |
+| POST | `/api/v1/projects/{id}/comments` | `comment:write` | Post a comment or a reply (`parent_id`); threading is one level deep |
+| POST | `/api/v1/projects/{id}/comments/{comment_id}/resolve` | `comment:write` | Resolve or reopen a thread; history is kept, never deleted |
+| GET | `/api/v1/projects/{id}/report` | `project:read` | Structured content for the printable status report, including its disclosure text |
+| GET | `/api/v1/projects/{id}/exports/{dataset}.csv` | `project:read` (+ `audit:read` for `audit`) | CSV export of `activities`, `entities`, `evidence`, `risks`, `comments`, `audit` |
+
+Both comment mutations and every export write audit entries: `comment.create`,
+`comment.resolve`, `comment.reopen`, `data.export` (with the dataset and row count) and
+`report.generate`. Taking data out of the system is treated as a recorded event, not a
+read.
+
+The `risks` export carries an explicit `calibrated` column. A probability in a
+spreadsheet with no indication that the model is uncalibrated invites exactly the
+false confidence the rest of the product works to avoid.
+
+`comment:write` is held by every role that can modify the twin (organization admin,
+project director, project manager, planner, QA/QC, safety, contractor). `viewer` and
+`ai_agent` may read discussion but not post: an agent proposes through
+`agent_action`, which requires human approval.

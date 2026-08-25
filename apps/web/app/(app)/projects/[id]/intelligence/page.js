@@ -4,6 +4,7 @@ import { api } from "../../../../../lib/api";
 import { useSession } from "../../../../../lib/session";
 import { Badge, Card, EmptyState, PermissionButton } from "../../../../../components/ui";
 import { useToast } from "../../../../../components/ui/Toast";
+import CommentThread from "../../../../../components/CommentThread";
 import { useProject } from "../layout";
 
 /** Every AI-derived number is shown with how it was produced. */
@@ -218,6 +219,8 @@ export default function IntelligencePage() {
                   Approve this action
                 </PermissionButton>
               )}
+              {/* Approval is a decision; the reasoning behind it belongs next to it. */}
+              <CommentThread projectId={projectId} targetType="agent_action" targetId={action.id} title="Review notes" compact />
             </>
           )}
         </Card>

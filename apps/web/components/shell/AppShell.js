@@ -58,17 +58,27 @@ export default function AppShell({ children }) {
   const { me, loading } = useSession();
   const identity = currentIdentity();
   const [projectId, setProjectId] = useState(null);
+  const [navOpen, setNavOpen] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
     const match = pathname.match(/^\/projects\/([^/]+)/);
     setProjectId(match ? match[1] : null);
+    // On a phone the sidebar is a drawer: navigating must close it, or the reader
+    // lands on a page hidden behind the menu they just used.
+    setNavOpen(false);
   }, [pathname]);
 
   const scope = projectId ? `/projects/${projectId}` : null;
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${navOpen ? "nav-open" : ""}`}>
+      <button className="nav-toggle" aria-expanded={navOpen} aria-label="Toggle navigation" onClick={() => setNavOpen(value => !value)}>
+        <span />
+        <span />
+        <span />
+      </button>
+      {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
       <aside className="sidebar">
         <Link href="/" className="brand">
           <div className="brand-kicker">ONEAI LABS</div>
@@ -78,6 +88,7 @@ export default function AppShell({ children }) {
         <nav className="nav-group">
           <div className="nav-heading">Portfolio</div>
           <NavLink href="/" label="Projects" exact />
+          <NavLink href="/compare" label="Compare" hint="portfolio metrics" />
           <NavLink href="/admin" label="Platform" hint="readiness · workers" />
         </nav>
 
@@ -89,6 +100,7 @@ export default function AppShell({ children }) {
             <NavLink href={`${scope}/schedule`} label="Schedule & 4D" hint="mapping · timeline" />
             <NavLink href={`${scope}/intelligence`} label="Intelligence" hint="ask · risk · forecast" />
             <NavLink href={`${scope}/audit`} label="Audit trail" hint="hash-chained" />
+            <NavLink href={`${scope}/report`} label="Report & export" hint="print · csv" />
           </nav>
         )}
 

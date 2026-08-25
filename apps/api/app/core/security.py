@@ -30,20 +30,20 @@ ROLE_PERMISSIONS = {
     "platform_admin": {"*"},
     "organization_admin": {
         "project:read", "project:write", "twin:read", "twin:write", "ai:run",
-        "action:approve", "audit:read", "admin:read", "user:manage",
+        "action:approve", "audit:read", "admin:read", "user:manage", "comment:write",
     },
     "project_director": {
         "project:read", "project:write", "twin:read", "twin:write", "ai:run",
-        "action:approve", "audit:read", "admin:read",
+        "action:approve", "audit:read", "admin:read", "comment:write",
     },
     "project_manager": {
         "project:read", "project:write", "twin:read", "twin:write", "ai:run",
-        "action:approve", "audit:read",
+        "action:approve", "audit:read", "comment:write",
     },
-    "planner": {"project:read", "twin:read", "twin:write", "ai:run", "audit:read"},
-    "qa_qc": {"project:read", "twin:read", "twin:write", "ai:run", "audit:read"},
-    "safety": {"project:read", "twin:read", "twin:write", "ai:run", "audit:read"},
-    "contractor": {"project:read", "twin:read", "twin:write", "ai:run"},
+    "planner": {"project:read", "twin:read", "twin:write", "ai:run", "audit:read", "comment:write"},
+    "qa_qc": {"project:read", "twin:read", "twin:write", "ai:run", "audit:read", "comment:write"},
+    "safety": {"project:read", "twin:read", "twin:write", "ai:run", "audit:read", "comment:write"},
+    "contractor": {"project:read", "twin:read", "twin:write", "ai:run", "comment:write"},
     "viewer": {"project:read", "twin:read"},
     "ai_agent": {"project:read", "twin:read", "ai:run", "action:propose"},
 }

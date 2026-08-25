@@ -15,9 +15,15 @@ export default function ProjectSwitcher({ currentId }) {
 
   if (!currentId) {
     // The bar titles whatever the route is actually showing, not always the portfolio.
-    const title = pathname.startsWith("/admin") ? "Platform" : "Projects";
-    const subtitle = pathname.startsWith("/admin")
-      ? "Readiness, workers and deployment state"
+    const titles = { "/admin": "Platform", "/compare": "Portfolio comparison" };
+    const subtitles = {
+      "/admin": "Readiness, workers and deployment state",
+      "/compare": "Measured metrics across every project in scope",
+    };
+    const matched = Object.keys(titles).find(prefix => pathname.startsWith(prefix));
+    const title = matched ? titles[matched] : "Projects";
+    const subtitle = matched
+      ? subtitles[matched]
       : projects.length
         ? `${projects.length} in this organization`
         : "Portfolio";
