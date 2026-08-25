@@ -1,0 +1,152 @@
+# Authentication: OIDC sign-in
+
+The API validates access tokens; the browser obtains them directly from the identity
+provider using **Authorization Code with PKCE**. No client secret exists anywhere in
+this system, and the application never handles a user's password.
+
+```
+browser ──1. /authorize (PKCE challenge)──▶ identity provider
+browser ◀─2. redirect with code───────────  identity provider
+browser ──3. /token (code + verifier)─────▶ identity provider
+browser ◀─4. access + refresh token────────  identity provider
+browser ──5. Authorization: Bearer ───────▶ construction-twin API
+                                             └─ validates signature (JWKS),
+                                                issuer, audience, expiry,
+                                                then maps claims to tenant + role
+```
+
+## What the API needs from a token
+
+| Requirement | Detail |
+|---|---|
+| Signature | RS256 (configurable via `OIDC_ALGORITHMS`), verified against the provider's JWKS |
+| `iss` | Must equal `OIDC_ISSUER` |
+| `aud` | Must contain `OIDC_AUDIENCE` |
+| `exp`, `sub` | Required |
+| Tenant scope | `OIDC_TENANT_CLAIM` and `OIDC_ORGANIZATION_CLAIM`, or the `OIDC_DEFAULT_*` fallbacks |
+| Role | `role`, `roles`, or Keycloak's `realm_access.roles`; unrecognised roles fall back to `viewer` |
+
+Roles must match the platform's own names, which are the RBAC vocabulary in
+`app/core/security.py`:
+
+```
+platform_admin  organization_admin  project_director  project_manager
+planner  qa_qc  safety  contractor  viewer  ai_agent
+```
+
+A token that carries no recognised role is not rejected - it is downgraded to `viewer`.
+Failing closed is deliberate: an unfamiliar corporate group must never inherit write
+access by accident.
+
+## Keycloak on Railway
+
+### 1. Deploy Keycloak
+
+Add a service from the image `quay.io/keycloak/keycloak:26.0` with:
+
+| Setting | Value |
+|---|---|
+| Start command | `start --hostname-strict=false --http-enabled=true --proxy-headers=xforwarded` |
+| `KC_DB` | `postgres` |
+| `KC_DB_URL` | `jdbc:postgresql://${{Postgres.PGHOST}}:${{Postgres.PGPORT}}/keycloak` |
+| `KC_DB_USERNAME` / `KC_DB_PASSWORD` | reference the Postgres service |
+| `KC_BOOTSTRAP_ADMIN_USERNAME` / `KC_BOOTSTRAP_ADMIN_PASSWORD` | your initial admin |
+| Public domain | generate one, e.g. `twin-idp.up.railway.app` |
+
+Create the `keycloak` database in the existing Postgres instance first, or attach a
+separate Postgres service. Keycloak must not share the application's database schema.
+
+### 2. Realm, client and mappers
+
+In the Keycloak admin console:
+
+1. **Create a realm**, e.g. `oneai`.
+2. **Create a client** `construction-twin-web`:
+   - Client authentication: **off** (public client - a browser cannot hold a secret)
+   - Standard flow: on. Direct access grants: off.
+   - Valid redirect URIs: `https://<web-domain>/auth/callback`
+   - Valid post logout redirect URIs: `https://<web-domain>`
+   - Web origins: `https://<web-domain>`
+3. **Audience mapper** (client scopes → `construction-twin-web-dedicated` → Add mapper →
+   By configuration → Audience): included client audience `construction-twin-api`, add
+   to access token. Without this the API rejects every token, because `aud` will not
+   match `OIDC_AUDIENCE`.
+4. **Tenant mappers** (same dedicated scope → Add mapper → User Attribute):
+   - user attribute `tenant_id` → token claim `tenant_id`, add to access token
+   - user attribute `organization_id` → token claim `organization_id`, add to access token
+
+   Then set those attributes on each user. For a single-tenant pilot you can skip the
+   mappers and set `OIDC_DEFAULT_TENANT` / `OIDC_DEFAULT_ORGANIZATION` on the API instead.
+5. **Realm roles**: create the platform role names you intend to use (`project_manager`,
+   `planner`, `viewer`, …) and assign them to users. They arrive in `realm_access.roles`.
+
+### 3. Configure the API
+
+On the `api` and `asset-worker` services:
+
+```bash
+AUTH_MODE=oidc
+OIDC_ISSUER=https://twin-idp.up.railway.app/realms/oneai
+OIDC_AUDIENCE=construction-twin-api
+OIDC_CLIENT_ID=construction-twin-web
+OIDC_SCOPES=openid profile email
+# Only for a single-tenant deployment without the user-attribute mappers:
+# OIDC_DEFAULT_TENANT=acme
+# OIDC_DEFAULT_ORGANIZATION=acme-hq
+```
+
+The browser reads all of this from `GET /api/v1/auth/config`, which also performs OIDC
+discovery. Nothing about the provider is hard-coded into the web build.
+
+### 4. Verify before switching off header auth
+
+```bash
+curl https://<api-domain>/api/v1/auth/config          # discovered: true
+```
+
+Then sign in through the web application and confirm:
+
+```bash
+curl https://<api-domain>/api/v1/auth/me -H "Authorization: Bearer <access token>"
+```
+
+The response must show the expected `tenant_id`, `organization_id` and `role`. If the
+role is `viewer` when you expected more, the realm role name does not match the platform
+vocabulary above.
+
+### 5. Switch to production mode
+
+Only once step 4 passes:
+
+```bash
+APP_ENV=production
+ALLOW_DEV_HEADER_AUTH=false
+```
+
+Production also enforces `FORCE_HTTPS=true`, `DEMO_ENDPOINTS_ENABLED=false`, a real
+`JWT_SECRET`, non-wildcard CORS and real object-store credentials. The process refuses
+to start otherwise - see `docs/DEPLOY_RAILWAY.md`.
+
+## Other providers
+
+Nothing in the API is Keycloak-specific; it uses OIDC discovery and JWKS.
+
+| Provider | Notes |
+|---|---|
+| Microsoft Entra ID | `OIDC_ISSUER=https://login.microsoftonline.com/<tenant>/v2.0`; expose an API scope and use its application ID URI as `OIDC_AUDIENCE`; map roles via app roles (`roles` claim) |
+| Auth0 | Add a rule/action emitting namespaced claims, then set `OIDC_TENANT_CLAIM=https://your-namespace/tenant_id` - namespaced claims containing dots are handled as literal claim names |
+| Okta | Use a custom authorization server; `OIDC_AUDIENCE` is that server's audience |
+
+## Session handling in the browser
+
+- Tokens are held in `sessionStorage`: cleared when the tab closes, not shared across
+  tabs or subdomains.
+- An expired access token is refreshed transparently once per request; if the refresh
+  fails the user is sent to `/login` with a return path.
+- Sign-out clears local tokens and then calls the provider's `end_session_endpoint`, so
+  the session ends at the identity provider too, not only in this application.
+
+**Known limitation.** `sessionStorage` is readable by any script running on the page, so
+a cross-site scripting flaw would expose the access token. The hardened alternative is a
+backend-for-frontend that holds refresh tokens in `httpOnly` cookies and proxies API
+calls. That is a larger architectural change and is not part of this release.

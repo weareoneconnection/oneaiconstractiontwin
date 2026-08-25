@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
-import { API, api } from "../lib/api";
+import { API } from "../lib/api";
+import { currentIdentity, logout } from "../lib/auth";
 
 export default function EnterpriseStatus(){
   const [health,setHealth]=useState(null),[report,setReport]=useState(null);
@@ -25,9 +26,16 @@ export default function EnterpriseStatus(){
     return()=>{active=false;clearInterval(timer)};
   },[]);
   const state=report?.status||"checking";
-  return <div className={`enterprise-status ${state}`} title={report?.error||"Enterprise readiness checks"}>
-    <span className="status-dot"/>
-    <div><b>{state.replace("_"," ").toUpperCase()}</b><small>{health?.version||"version unavailable"} · Enterprise Pilot</small></div>
+  const identity=currentIdentity();
+  return <div className="status-cluster">
+    <div className={`enterprise-status ${state}`} title={report?.error||"Enterprise readiness checks"}>
+      <span className="status-dot"/>
+      <div><b>{state.replace("_"," ").toUpperCase()}</b><small>{health?.version||"version unavailable"} · Enterprise Pilot</small></div>
+    </div>
+    {identity && <div className="identity-chip" title={`${identity.subject} · tenant ${identity.tenant||"unscoped"}`}>
+      <div><b>{identity.name}</b><small>{identity.organization||identity.tenant||"signed in"}</small></div>
+      <button className="btn ghost" onClick={()=>logout()}>Sign out</button>
+    </div>}
   </div>
 }
 

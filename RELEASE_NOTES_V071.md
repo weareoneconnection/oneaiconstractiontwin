@@ -66,6 +66,33 @@ makes the product's own claims verifiable.
   `@zip.js/zip.js` pinned so `npm run build` completes. Node requirement corrected to
   `>=20.9`.
 
+## Web application (v0.7.2)
+
+The dashboard was a single dense page with no routing, no permission awareness and no
+loading or empty states. It is now a navigable workspace:
+
+| Route | Purpose |
+|---|---|
+| `/` | Portfolio: project list, filter, create |
+| `/projects/{id}` | Overview: progress, pilot readiness checklist, next steps |
+| `/projects/{id}/model` | IFC import, model inventory, 3D viewer, distributed 3D Tiles pipeline |
+| `/projects/{id}/schedule` | Baseline schedule table, BIM↔schedule mapping, 4D timeline |
+| `/projects/{id}/intelligence` | Ask Twin, risk, forecast, simulation, agent approval |
+| `/projects/{id}/audit` | Hash-chained audit trail with one-click chain verification |
+| `/admin` | Readiness checks and asset-worker heartbeats |
+| `/login`, `/auth/callback` | OIDC sign-in |
+
+Beyond the routing:
+
+- **Permission-aware controls.** Actions the caller's role cannot perform are shown
+  disabled with the permission they require, rather than hidden (which hides whether the
+  feature exists) or left enabled (which produces a 403 after the click).
+- **Real states.** Loading skeletons, empty states that explain what to do next, toasts
+  for every mutation, and an error boundary per project route.
+- **Provenance carried through.** Confidence, evidence coverage, retrieval method, model
+  name, calibration state, sample size, per-claim support and per-evidence relevance are
+  all surfaced next to the numbers they qualify.
+
 ## Test coverage
 
 31 automated tests (was 8), including regression tests for every defect above, plus

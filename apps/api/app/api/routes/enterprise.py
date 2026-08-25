@@ -11,6 +11,7 @@ from app.core.config import settings
 from app.core.security import (
     ROLE_PERMISSIONS,
     RequestContext,
+    discovery_document,
     get_context,
     issue_local_token,
     permissions_for_role,
@@ -65,6 +66,45 @@ def dev_token(payload: DevTokenRequest):
         "expires_in": payload.expires_minutes * 60,
         "role": payload.role,
     }
+
+
+@router.get("/auth/config")
+def auth_config():
+    """What the browser needs to start a login. Public by necessity, and safe:
+
+    a single-page application is a public OAuth client, so the client id and the
+    provider endpoints are not secrets. No client secret is involved anywhere - the
+    browser uses Authorization Code with PKCE.
+    """
+    payload: dict[str, object] = {
+        "auth_mode": settings.auth_mode,
+        "dev_header_auth": bool(settings.allow_dev_header_auth and not settings.is_production),
+        "environment": settings.app_env,
+        "oidc": None,
+    }
+    if settings.auth_mode in {"oidc", "hybrid"} and settings.oidc_issuer:
+        provider: dict[str, object] = {
+            "issuer": settings.oidc_issuer,
+            "client_id": settings.oidc_client_id,
+            "scopes": settings.oidc_scopes,
+            "audience": settings.oidc_audience,
+        }
+        try:
+            document = discovery_document()
+            provider.update(
+                {
+                    "authorization_endpoint": document.get("authorization_endpoint"),
+                    "token_endpoint": document.get("token_endpoint"),
+                    "end_session_endpoint": document.get("end_session_endpoint"),
+                    "userinfo_endpoint": document.get("userinfo_endpoint"),
+                    "discovered": True,
+                }
+            )
+        except Exception as exc:
+            # The dashboard shows this rather than a blank login button.
+            provider.update({"discovered": False, "error": str(exc)})
+        payload["oidc"] = provider
+    return payload
 
 
 @router.get("/auth/me")

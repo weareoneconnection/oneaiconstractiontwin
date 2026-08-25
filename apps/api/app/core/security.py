@@ -124,6 +124,16 @@ def _discovered_jwks_url() -> str:
 
 
 @lru_cache(maxsize=1)
+def discovery_document() -> dict[str, Any]:
+    """Cached OpenID discovery document for the configured issuer."""
+    if not settings.oidc_issuer:
+        raise RuntimeError("OIDC issuer is not configured")
+    response = httpx.get(settings.oidc_issuer.rstrip("/") + "/.well-known/openid-configuration", timeout=5.0)
+    response.raise_for_status()
+    return dict(response.json())
+
+
+@lru_cache(maxsize=1)
 def _jwk_client() -> PyJWKClient:
     return PyJWKClient(_discovered_jwks_url(), cache_keys=True, lifespan=300)
 
@@ -174,14 +184,47 @@ def _decode_bearer_token(token: str) -> tuple[dict[str, Any], str]:
         raise HTTPException(status_code=401, detail=f"Invalid access token: {exc}") from exc
 
 
+def _claim(claims: dict[str, Any], *names: str) -> str | None:
+    """First non-empty claim among `names`, including one level of nesting.
+
+    Providers put custom claims in different places: top level, inside a namespaced
+    object, or under `resource_access`/`attributes`. Only simple dotted paths are
+    supported, deliberately - anything more elaborate belongs in a provider mapper.
+    """
+    for name in names:
+        if not name:
+            continue
+        # Literal key first: namespaced claims such as "https://oneai.dev/tenant"
+        # contain dots but are single keys, not paths.
+        if claims.get(name):
+            return str(claims[name])
+        if "." in name:
+            node: Any = claims
+            for part in name.split("."):
+                if not isinstance(node, dict):
+                    node = None
+                    break
+                node = node.get(part)
+            if node:
+                return str(node)
+    return None
+
+
 def _context_from_claims(claims: dict[str, Any], auth_source: str) -> RequestContext:
-    tenant_id = claims.get("tenant_id") or claims.get("tenant")
-    organization_id = claims.get("organization_id") or claims.get("org_id") or claims.get("organization")
+    tenant_id = _claim(claims, settings.oidc_tenant_claim, "tenant_id", "tenant") or settings.oidc_default_tenant
+    organization_id = (
+        _claim(claims, settings.oidc_organization_claim, "organization_id", "org_id", "organization")
+        or settings.oidc_default_organization
+    )
     user_id = claims.get("sub") or claims.get("user_id")
     if not tenant_id or not organization_id or not user_id:
         raise HTTPException(
             status_code=403,
-            detail="Token must include tenant_id, organization_id and sub claims",
+            detail=(
+                "Token is missing the tenant scope. Configure the identity provider to emit "
+                f"'{settings.oidc_tenant_claim}' and '{settings.oidc_organization_claim}' claims, "
+                "or set OIDC_DEFAULT_TENANT / OIDC_DEFAULT_ORGANIZATION for a single-tenant deployment."
+            ),
         )
     return RequestContext(
         tenant_id=str(tenant_id),

@@ -2,12 +2,13 @@ export const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export function authHeaders() {
   const headers = {};
-  const token = typeof window !== "undefined" ? window.localStorage.getItem("oneai_access_token") : null;
+  // A real session always wins. Only when there is none do we fall back to the
+  // development identity headers, which the API accepts solely outside production.
+  const token = typeof window !== "undefined" ? window.sessionStorage.getItem("oneai_access_token") : null;
   if (token) {
     headers.Authorization = `Bearer ${token}`;
     return headers;
   }
-  // Local-pilot defaults. Production browsers should use OIDC and never expose an API key.
   headers["X-Tenant-ID"] = process.env.NEXT_PUBLIC_TENANT_ID || "demo-tenant";
   headers["X-Organization-ID"] = process.env.NEXT_PUBLIC_ORGANIZATION_ID || "demo-org";
   headers["X-User-ID"] = process.env.NEXT_PUBLIC_USER_ID || "demo-user";
@@ -15,7 +16,13 @@ export function authHeaders() {
   return headers;
 }
 
-export async function api(path, options={}) {
+/** Called when the API rejects the session and a refresh cannot save it. */
+let onSessionExpired = () => {};
+export function setSessionExpiredHandler(handler) {
+  onSessionExpired = handler || (() => {});
+}
+
+export async function api(path, options={}, { allowRetry = true } = {}) {
   const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
   let res;
   try {
@@ -38,6 +45,14 @@ export async function api(path, options={}) {
       `(${typeof window !== "undefined" ? window.location.origin : "the web app"}) ` +
       `is listed in the API's CORS_ORIGINS. Underlying error: ${cause.message}`
     );
+  }
+  if (res.status === 401 && allowRetry && typeof window !== "undefined") {
+    // An expired access token is an ordinary event, not an error to show the user:
+    // try the refresh token once, and only surface a failure if that cannot recover.
+    const { refreshSession } = await import("./auth");
+    if (await refreshSession()) return api(path, options, { allowRetry: false });
+    onSessionExpired();
+    throw new Error("Your session has expired. Sign in again to continue.");
   }
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   const type = res.headers.get("content-type") || "";

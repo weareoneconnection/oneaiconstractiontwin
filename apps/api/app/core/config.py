@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     oidc_audience: str = ""
     oidc_jwks_url: str = ""
     oidc_algorithms: str = "RS256"
+    # Public client id used by the browser for Authorization Code + PKCE. A single-page
+    # application holds no client secret, so this value is not confidential.
+    oidc_client_id: str = ""
+    oidc_scopes: str = "openid profile email"
+    # Which claims carry the tenant scope. Identity providers name these differently,
+    # and Keycloak emits nothing of the sort until a mapper is configured, so both the
+    # claim name and a fallback are configurable.
+    oidc_tenant_claim: str = "tenant_id"
+    oidc_organization_claim: str = "organization_id"
+    oidc_default_tenant: str = ""
+    oidc_default_organization: str = ""
     api_key_records_json: str = "{}"
 
     # Rate limiting
@@ -243,6 +254,10 @@ class Settings(BaseSettings):
                 raise ValueError("Production JWT_SECRET must be a unique value of at least 32 characters")
             if self.auth_mode in {"oidc", "hybrid"} and not (self.oidc_issuer and self.oidc_audience):
                 raise ValueError("Production OIDC requires OIDC_ISSUER and OIDC_AUDIENCE")
+            if self.auth_mode in {"oidc", "hybrid"} and not self.oidc_client_id:
+                # Without it the browser cannot start a sign-in, so the deployment would
+                # be locked out the moment header auth is disabled.
+                raise ValueError("Production OIDC requires OIDC_CLIENT_ID for the browser sign-in flow")
             if self.asset_storage_backend == "s3" and (
                 not self.s3_access_key
                 or not self.s3_secret_key

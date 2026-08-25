@@ -40,6 +40,13 @@ This is the cumulative, runnable codebase for the OneAI Construction Twin Enterp
 - Docker Compose, Kubernetes, HPA, PDB and network-policy references
 - Enterprise pilot status, checklist and E2E validation script
 
+### Web application
+- Routed workspace: portfolio, project overview, BIM & 3D, schedule & 4D, intelligence,
+  audit trail, platform administration
+- OIDC sign-in with PKCE, session refresh and provider sign-out
+- Permission-aware controls driven by the API's own `/auth/me` response
+- Loading, empty and error states throughout; provenance shown beside every AI-derived number
+
 ### Hardening added in v0.7.1
 - Authenticated, tenant-scoped delivery of every generated asset (no static mount)
 - Hash-chained audit records with a verification endpoint
@@ -180,6 +187,7 @@ together with the sample they were computed from.
 - `docs/DEPLOYMENT.md` - local, Docker and Kubernetes deployment
 - `docs/DEPLOY_RAILWAY.md` - hosted deployment on Railway (api, asset-worker, web, Postgres, Redis, S3)
 - `docs/SECURITY.md` - authentication, authorization and production controls
+- `docs/AUTH_OIDC.md` - browser sign-in, Keycloak setup and the switch to production mode
 - `docs/BACKUP_RESTORE.md` - backup and restore operations
 - `docs/PILOT_RUNBOOK.md` - first enterprise pilot workflow
 - `docs/DATA_MODEL.md` - Project World Model and enterprise records
