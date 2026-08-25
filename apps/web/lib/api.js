@@ -17,16 +17,28 @@ export function authHeaders() {
 
 export async function api(path, options={}) {
   const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-  const res = await fetch(`${API}${path}`, {
-    ...options,
-    headers: {
-      ...(options.body instanceof FormData ? {} : {"Content-Type":"application/json"}),
-      ...authHeaders(),
-      "X-Request-ID": requestId,
-      ...(options.headers||{}),
-    },
-    cache:"no-store",
-  });
+  let res;
+  try {
+    res = await fetch(`${API}${path}`, {
+      ...options,
+      headers: {
+        ...(options.body instanceof FormData ? {} : {"Content-Type":"application/json"}),
+        ...authHeaders(),
+        "X-Request-ID": requestId,
+        ...(options.headers||{}),
+      },
+      cache:"no-store",
+    });
+  } catch (cause) {
+    // fetch() rejects without status for DNS failures, blocked mixed content and
+    // CORS rejections alike, so name the target explicitly.
+    throw new Error(
+      `Cannot reach the API at ${API} (requested ${path}). ` +
+      `Check NEXT_PUBLIC_API_URL was set as a build argument, and that this origin ` +
+      `(${typeof window !== "undefined" ? window.location.origin : "the web app"}) ` +
+      `is listed in the API's CORS_ORIGINS. Underlying error: ${cause.message}`
+    );
+  }
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   const type = res.headers.get("content-type") || "";
   return type.includes("application/json") ? res.json() : res.text();

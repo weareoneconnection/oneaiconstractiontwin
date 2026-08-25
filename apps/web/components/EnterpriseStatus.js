@@ -19,7 +19,7 @@ export default function EnterpriseStatus(){
   const state=report?.status||"checking";
   return <div className={`enterprise-status ${state}`} title={report?.error||"Enterprise readiness checks"}>
     <span className="status-dot"/>
-    <div><b>{state.replace("_"," ").toUpperCase()}</b><small>{health?.version||"0.7.0"} · Enterprise Pilot</small></div>
+    <div><b>{state.replace("_"," ").toUpperCase()}</b><small>{health?.version||"version unavailable"} · Enterprise Pilot</small></div>
   </div>
 }
 
