@@ -541,3 +541,54 @@ def test_readiness_rejects_local_storage_when_workers_run_separately():
         settings.asset_storage_backend = original_backend
         settings.require_asset_worker = original_required
         settings.asset_local_shared = original_shared
+
+
+def test_database_target_is_printable_without_leaking_the_password():
+    """Startup errors name the database, so the string must be safe for logs."""
+    target = Settings(database_url="postgresql://twin:s3cr3t@db.internal:5432/railway").database_target
+    assert "s3cr3t" not in target
+    assert "twin:***@db.internal:5432/railway" in target
+    assert Settings(database_url="sqlite:///./local.db").database_target == "sqlite:///./local.db"
+
+
+def test_object_scoped_credentials_do_not_trigger_a_bucket_create():
+    """R2's "Object Read & Write" token answers head_bucket with 403, not 404.
+
+    Reading that as "bucket missing" made the code attempt a create it has no rights
+    to perform, so a perfectly usable least-privilege credential failed at startup.
+    """
+    from botocore.exceptions import ClientError
+
+    from app.services.object_storage import ObjectStorage
+
+    storage_instance = ObjectStorage.__new__(ObjectStorage)
+    storage_instance.backend = "s3"
+    storage_instance._bucket_ready = False
+
+    calls: list[str] = []
+
+    class FakeClient:
+        def head_bucket(self, **_):
+            calls.append("head")
+            raise ClientError({"ResponseMetadata": {"HTTPStatusCode": 403}, "Error": {"Code": "403"}}, "HeadBucket")
+
+        def create_bucket(self, **_):
+            calls.append("create")
+
+    storage_instance._client = lambda: FakeClient()
+    storage_instance.ensure_bucket()
+    assert calls == ["head"], "a 403 must not be followed by a create attempt"
+    assert storage_instance._bucket_ready is True
+
+    # A genuine 404 still creates the bucket.
+    storage_instance._bucket_ready = False
+    calls.clear()
+
+    class MissingBucketClient(FakeClient):
+        def head_bucket(self, **_):
+            calls.append("head")
+            raise ClientError({"ResponseMetadata": {"HTTPStatusCode": 404}, "Error": {"Code": "404"}}, "HeadBucket")
+
+    storage_instance._client = lambda: MissingBucketClient()
+    storage_instance.ensure_bucket()
+    assert calls == ["head", "create"]

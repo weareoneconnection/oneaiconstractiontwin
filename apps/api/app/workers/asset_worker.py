@@ -36,7 +36,12 @@ def main() -> None:
     elif settings.require_migration_head:
         status = migration_status()
         if not status["at_head"]:
-            raise RuntimeError(f"Database migration is not at head: {status}")
+            raise RuntimeError(
+                f"Database migration is not at head: {status}. "
+                f"This process is connected to {settings.database_target}. "
+                "A 'current: None' here usually means DATABASE_URL is unset on this "
+                "service, so it fell back to local SQLite instead of the shared database."
+            )
     identity = worker_id()
     heartbeat(identity, "online", state="starting")
     print(

@@ -63,16 +63,32 @@ class ObjectStorage:
         return self._s3
 
     def ensure_bucket(self) -> None:
+        """Create the bucket only when it is genuinely missing.
+
+        A least-privilege object-scoped credential (R2 "Object Read & Write", an S3
+        policy without s3:ListBucket) is denied `head_bucket` with 403 even though the
+        bucket exists and objects are fully usable. Treating every ClientError as
+        "missing" made the code attempt a create it is not allowed to perform, turning
+        a working configuration into a startup failure.
+        """
         if self.backend != "s3" or self._bucket_ready:
             return
         client = self._client()
         try:
             client.head_bucket(Bucket=settings.s3_bucket)
-        except ClientError:
-            if settings.s3_region and settings.s3_region != "us-east-1" and not settings.s3_endpoint:
-                client.create_bucket(Bucket=settings.s3_bucket, CreateBucketConfiguration={"LocationConstraint": settings.s3_region})
-            else:
-                client.create_bucket(Bucket=settings.s3_bucket)
+            self._bucket_ready = True
+            return
+        except ClientError as exc:
+            status = int(exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0))
+            if status not in (0, 404):
+                # 403 and friends: the bucket is there, this credential just cannot
+                # inspect it at bucket level. Object operations decide the outcome.
+                self._bucket_ready = True
+                return
+        if settings.s3_region and settings.s3_region != "us-east-1" and not settings.s3_endpoint:
+            client.create_bucket(Bucket=settings.s3_bucket, CreateBucketConfiguration={"LocationConstraint": settings.s3_region})
+        else:
+            client.create_bucket(Bucket=settings.s3_bucket)
         self._bucket_ready = True
 
     def local_path(self, key: str) -> Path:
@@ -209,8 +225,14 @@ class ObjectStorage:
             probe.unlink(missing_ok=True)
             return {"backend": "local", "root": str(self.local_root)}
         self.ensure_bucket()
-        self._client().head_bucket(Bucket=settings.s3_bucket)
-        return {"backend": "s3", "bucket": settings.s3_bucket}
+        # Probe the capability the application actually needs - write, read back and
+        # delete one object under our own prefix - rather than bucket administration.
+        probe_key = f"{settings.asset_object_prefix.strip('/')}/.healthcheck"
+        client = self._client()
+        client.put_object(Bucket=settings.s3_bucket, Key=probe_key, Body=b"ok", ContentType="text/plain")
+        client.get_object(Bucket=settings.s3_bucket, Key=probe_key)["Body"].read()
+        client.delete_object(Bucket=settings.s3_bucket, Key=probe_key)
+        return {"backend": "s3", "bucket": settings.s3_bucket, "probe": "object-read-write"}
 
     def api_url(self, key: str) -> str:
         return f"/api/v1/asset-objects/{normalize_key(key)}"

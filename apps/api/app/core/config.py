@@ -135,6 +135,25 @@ class Settings(BaseSettings):
         return Path(self.generated_asset_root).expanduser().resolve()
 
     @property
+    def database_target(self) -> str:
+        """Human-readable database target with the password removed.
+
+        Startup failures like "migration is not at head" are ambiguous without it: the
+        usual cause is a service pointing at a different database than it should (an
+        unset DATABASE_URL silently falls back to local SQLite). Credentials are
+        stripped so this is safe to print in logs.
+        """
+        url = self.database_url
+        if "://" not in url:
+            return url
+        scheme, _, remainder = url.partition("://")
+        if "@" in remainder:
+            credentials, _, host = remainder.rpartition("@")
+            user = credentials.split(":", 1)[0]
+            return f"{scheme}://{user}:***@{host}"
+        return f"{scheme}://{remainder}"
+
+    @property
     def libpq_database_url(self) -> str:
         """The database URL in the form libpq tools accept.
 

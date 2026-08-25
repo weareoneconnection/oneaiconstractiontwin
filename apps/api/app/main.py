@@ -44,7 +44,12 @@ async def lifespan(app: FastAPI):
     elif settings.require_migration_head:
         status = migration_status()
         if not status["at_head"]:
-            raise RuntimeError(f"Database migration is not at head: {status}")
+            raise RuntimeError(
+                f"Database migration is not at head: {status}. "
+                f"This process is connected to {settings.database_target}. "
+                "A 'current: None' here usually means DATABASE_URL is unset on this "
+                "service, so it fell back to local SQLite instead of the shared database."
+            )
     ASSET_ROOT.mkdir(parents=True, exist_ok=True)
     if structlog:
         log.info("application_started", version=settings.app_version, environment=settings.app_env)
