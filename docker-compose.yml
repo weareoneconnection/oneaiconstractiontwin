@@ -1,0 +1,145 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-oneai}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oneai-dev-only}
+      POSTGRES_DB: ${POSTGRES_DB:-construction_twin}
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-oneai} -d ${POSTGRES_DB:-construction_twin}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6379:6379"]
+    volumes: ["redisdata:/data"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ':9001'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-oneai}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-oneai-dev-only-secret}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["miniodata:/data"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: ./apps/api
+    environment: &backend_env
+      APP_ENV: docker
+      AUTO_MIGRATE: "true"
+      REQUIRE_MIGRATION_HEAD: "true"
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-oneai}:${POSTGRES_PASSWORD:-oneai-dev-only}@postgres:5432/${POSTGRES_DB:-construction_twin}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_REQUIRED: "true"
+      AUTH_MODE: hybrid
+      ALLOW_DEV_HEADER_AUTH: "true"
+      JWT_SECRET: ${JWT_SECRET:-development-only-change-me-please-rotate-now}
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000
+      TRUSTED_HOSTS: localhost,127.0.0.1,api,testserver
+      FORCE_HTTPS: "false"
+      MAX_UPLOAD_MB: "512"
+      UPLOAD_ROOT: /data/uploads
+      GENERATED_ASSET_ROOT: /data/generated-assets
+      ASSET_STORAGE_BACKEND: s3
+      ASSET_WORK_ROOT: /data/asset-work
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER:-oneai}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-oneai-dev-only-secret}
+      S3_BUCKET: construction-twin
+      ASSET_OBJECT_PREFIX: v07
+      REQUIRE_ASSET_WORKER: "false"
+      WORKER_HEARTBEAT_SECONDS: "15"
+      WORKER_STALE_AFTER_SECONDS: "90"
+      BACKUP_ROOT: /backups
+      DEMO_ENDPOINTS_ENABLED: "true"
+    ports: ["8000:8000"]
+    volumes: ["twindata:/data", "backups:/backups"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health/ready')"]
+      interval: 10s
+      timeout: 3s
+      retries: 30
+
+  asset-worker:
+    build:
+      context: ./apps/api
+    command: ["python", "-m", "app.workers.asset_worker"]
+    environment:
+      <<: *backend_env
+      AUTO_MIGRATE: "false"
+      REQUIRE_ASSET_WORKER: "false"
+    volumes: ["twindata:/data", "backups:/backups"]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      NEXT_PUBLIC_TENANT_ID: demo-tenant
+      NEXT_PUBLIC_ORGANIZATION_ID: demo-org
+      NEXT_PUBLIC_USER_ID: demo-user
+      NEXT_PUBLIC_ROLE: platform_admin
+    ports: ["3000:3000"]
+    depends_on:
+      api: { condition: service_healthy }
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: ["monitoring"]
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    volumes:
+      - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheusdata:/prometheus
+    ports: ["9090:9090"]
+    depends_on: [api]
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin-dev-only}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafanadata:/var/lib/grafana
+      - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3001:3000"]
+    depends_on: [prometheus]
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  twindata:
+  backups:
+  prometheusdata:
+  grafanadata:

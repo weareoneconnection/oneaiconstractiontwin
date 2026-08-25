@@ -1,0 +1,47 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Node
+node_modules/
+.next/
+# Cesium runtime assets are copied from node_modules by scripts/copy-cesium.mjs
+# during postinstall and the Docker build. Vendoring them adds ~7 MB of duplicates.
+apps/web/public/cesium/
+# Next 16 writes these on dev start; the repository controls its own docs
+AGENTS.md
+CLAUDE.md
+
+# Runtime data
+*.db
+construction_twin.db
+apps/api/construction_twin.db
+data/uploads/*
+data/generated-assets/*
+data/object-store/*
+data/asset-work/*
+!data/uploads/.gitkeep
+!data/generated-assets/.gitkeep
+!data/object-store/.gitkeep
+!data/asset-work/.gitkeep
+
+# Environment
+.env
+apps/web/.env.local
+
+# OS
+.DS_Store
+
+# Build, coverage and backups
+coverage/
+.coverage
+htmlcov/
+data/backups/*
+!data/backups/.gitkeep
+*.log
+
+# IDE
+.vscode/
+.idea/

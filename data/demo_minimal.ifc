@@ -1,0 +1,15 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [CoordinationView]'),'2;1');
+FILE_NAME('OneAI_v03_demo.ifc','2026-08-24T00:00:00',('OneAI Labs'),('OneAI Labs'),'OneAI Construction Twin','OneAI','');
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+#100=IFCSITE('0SITEDEMO000000000001',$,'Station 02',$,$,$,$,$,$,$,$,$,$,$);
+#110=IFCBUILDING('0BUILDDEMO00000000001',$,'Station 02 Building',$,$,$,$,$,$,$,$,$);
+#120=IFCBUILDINGSTOREY('0STOREYDEMO000000001',$,'Roof Level',$,$,$,$,$,$,$);
+#200=IFCBEAM('3lXDemoB023',$,'Beam B-023',$,$,$,$,$,$);
+#201=IFCCOLUMN('3lXDemoC010',$,'Column C-010',$,$,$,$,$,$);
+#202=IFCPLATE('3lXDemoCP23',$,'Connection Plate CP-23',$,$,$,$,$,$);
+ENDSEC;
+END-ISO-10303-21;

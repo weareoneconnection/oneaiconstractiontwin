@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: construction-twin
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "2048m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+spec:
+  tls:
+    - hosts: [twin.example.com, api.twin.example.com]
+      secretName: construction-twin-tls
+  rules:
+    - host: twin.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: construction-twin-web, port: { name: http } }
+    - host: api.twin.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: construction-twin-api, port: { name: http } }

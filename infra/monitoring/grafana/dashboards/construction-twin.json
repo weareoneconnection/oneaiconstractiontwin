@@ -1,0 +1,14 @@
+{
+  "title": "OneAI Construction Twin Enterprise Pilot",
+  "uid": "oneai-ct-v07",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "15s",
+  "panels": [
+    {"type":"timeseries","title":"HTTP Request Rate","gridPos":{"h":8,"w":12,"x":0,"y":0},"targets":[{"expr":"sum(rate(construction_twin_http_requests_total[5m])) by (status)","legendFormat":"{{status}}"}]},
+    {"type":"timeseries","title":"HTTP P95 Latency","gridPos":{"h":8,"w":12,"x":12,"y":0},"targets":[{"expr":"histogram_quantile(0.95, sum(rate(construction_twin_http_request_duration_seconds_bucket[5m])) by (le, path))","legendFormat":"{{path}}"}]},
+    {"type":"stat","title":"Asset Jobs Completed","gridPos":{"h":6,"w":8,"x":0,"y":8},"targets":[{"expr":"construction_twin_asset_jobs_completed_total"}]},
+    {"type":"stat","title":"Asset Jobs Failed","gridPos":{"h":6,"w":8,"x":8,"y":8},"targets":[{"expr":"sum(construction_twin_asset_jobs_failed_total)"}]},
+    {"type":"stat","title":"Cache Hits","gridPos":{"h":6,"w":8,"x":16,"y":8},"targets":[{"expr":"construction_twin_asset_cache_hits_total"}]}
+  ]
+}

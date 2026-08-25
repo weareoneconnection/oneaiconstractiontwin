@@ -1,0 +1,3 @@
+# Optional but recommended for full IFC semantic parsing.
+# Base v0.3 works without this file by using a STEP-text fallback parser.
+ifcopenshell>=0.8.0,<0.9

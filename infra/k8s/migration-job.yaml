@@ -1,0 +1,36 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: construction-twin-migrate-v070
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: construction-twin
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migrate
+          image: oneai/construction-twin-api:0.7.0
+          command: ["python", "scripts/migrate.py"]
+          envFrom:
+            - configMapRef: { name: construction-twin-config }
+            - secretRef: { name: construction-twin-secrets }
+          env:
+            - { name: APP_ENV, value: "production" }
+            - { name: AUTO_MIGRATE, value: "false" }
+            - { name: REQUIRE_MIGRATION_HEAD, value: "true" }
+            - { name: AUTH_MODE, value: "oidc" }
+            - { name: ALLOW_DEV_HEADER_AUTH, value: "false" }
+            - { name: FORCE_HTTPS, value: "true" }
+            - { name: DEMO_ENDPOINTS_ENABLED, value: "false" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: {} }

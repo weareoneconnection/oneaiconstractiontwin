@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: construction-twin-config
+data:
+  LOG_LEVEL: INFO
+  PUBLIC_BASE_URL: https://api.twin.example.com
+  WEB_BASE_URL: https://twin.example.com
+  CORS_ORIGINS: https://twin.example.com
+  TRUSTED_HOSTS: twin.example.com,api.twin.example.com,construction-twin-api
+  SECURITY_HEADERS_ENABLED: "true"
+  MAX_UPLOAD_MB: "2048"
+  UPLOAD_ROOT: /data/uploads
+  GENERATED_ASSET_ROOT: /data/generated-assets
+  ASSET_WORK_ROOT: /data/asset-work
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_REQUESTS: "300"
+  RATE_LIMIT_WINDOW_SECONDS: "60"
+  RATE_LIMIT_FAIL_OPEN: "false"
+  ASSET_STORAGE_BACKEND: s3
+  ASSET_OBJECT_PREFIX: v07
+  S3_BUCKET: construction-twin
+  S3_REGION: ap-southeast-1
+  REDIS_REQUIRED: "true"
+  WORKER_HEARTBEAT_SECONDS: "15"
+  WORKER_STALE_AFTER_SECONDS: "90"
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: oneai-construction-twin-api
+  BACKUP_ROOT: /backups
+  BACKUP_RETENTION_DAYS: "30"
+  PILOT_NAME: Steel Structure Schedule Intelligence

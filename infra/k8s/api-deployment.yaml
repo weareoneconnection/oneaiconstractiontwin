@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: construction-twin-api
+  labels:
+    app.kubernetes.io/name: construction-twin-api
+    app.kubernetes.io/version: "0.7.0"
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels: { app: construction-twin-api }
+  template:
+    metadata:
+      labels: { app: construction-twin-api }
+    spec:
+      serviceAccountName: construction-twin
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: api
+          image: oneai/construction-twin-api:0.7.0
+          imagePullPolicy: IfNotPresent
+          ports: [{ name: http, containerPort: 8000 }]
+          envFrom:
+            - configMapRef: { name: construction-twin-config }
+            - secretRef: { name: construction-twin-secrets }
+          env:
+            - { name: APP_ENV, value: "production" }
+            - { name: AUTO_MIGRATE, value: "false" }
+            - { name: REQUIRE_MIGRATION_HEAD, value: "true" }
+            - { name: AUTH_MODE, value: "oidc" }
+            - { name: ALLOW_DEV_HEADER_AUTH, value: "false" }
+            - { name: FORCE_HTTPS, value: "true" }
+            - { name: DEMO_ENDPOINTS_ENABLED, value: "false" }
+            - { name: REQUIRE_ASSET_WORKER, value: "true" }
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            httpGet: { path: /health/live, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+          startupProbe:
+            httpGet: { path: /health/live, port: http }
+            periodSeconds: 5
+            failureThreshold: 30
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: data, mountPath: /data }
+            - { name: backups, mountPath: /backups }
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits: { cpu: "2", memory: "2Gi" }
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        - { name: data, emptyDir: {} }
+        - { name: backups, emptyDir: {} }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: construction-twin-api
+spec:
+  selector: { app: construction-twin-api }
+  ports: [{ name: http, port: 80, targetPort: http }]

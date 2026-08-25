@@ -1,0 +1,11 @@
+{
+  "product": "OneAI Construction Twin",
+  "version": "0.7.1",
+  "edition": "Enterprise Pilot Edition",
+  "release_date": "2026-08-24",
+  "baseline": "Cumulative v0.1-v0.6 codebase, v0.7 enterprise-pilot hardening, and the v0.7.1 security and evidence-integrity pass",
+  "api_version": "0.7.1",
+  "recommended_python": "3.12",
+  "required_node": ">=20.9",
+  "asset_pipeline_version": "0.7.0"
+}

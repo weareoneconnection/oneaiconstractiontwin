@@ -1,0 +1,37 @@
+services:
+  api:
+    environment:
+      APP_ENV: production
+      AUTO_MIGRATE: "false"
+      REQUIRE_MIGRATION_HEAD: "true"
+      AUTH_MODE: oidc
+      ALLOW_DEV_HEADER_AUTH: "false"
+      FORCE_HTTPS: "true"
+      DEMO_ENDPOINTS_ENABLED: "false"
+      REDIS_REQUIRED: "true"
+      REQUIRE_ASSET_WORKER: "true"
+      RATE_LIMIT_FAIL_OPEN: "false"
+      CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:?set TRUSTED_HOSTS}
+      OIDC_ISSUER: ${OIDC_ISSUER:?set OIDC_ISSUER}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:?set OIDC_AUDIENCE}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:?set OIDC_JWKS_URL}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+  asset-worker:
+    environment:
+      APP_ENV: production
+      AUTO_MIGRATE: "false"
+      REQUIRE_MIGRATION_HEAD: "true"
+      AUTH_MODE: oidc
+      ALLOW_DEV_HEADER_AUTH: "false"
+      FORCE_HTTPS: "true"
+      DEMO_ENDPOINTS_ENABLED: "false"
+      REDIS_REQUIRED: "true"
+      OIDC_ISSUER: ${OIDC_ISSUER:?set OIDC_ISSUER}
+      OIDC_AUDIENCE: ${OIDC_AUDIENCE:?set OIDC_AUDIENCE}
+      OIDC_JWKS_URL: ${OIDC_JWKS_URL:?set OIDC_JWKS_URL}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}

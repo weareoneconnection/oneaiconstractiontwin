@@ -1,0 +1,25 @@
+{
+  "name": "oneai-construction-twin-web",
+  "version": "0.7.1",
+  "private": true,
+  "engines": {
+    "node": ">=20.9"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "postinstall": "node scripts/copy-cesium.mjs"
+  },
+  "dependencies": {
+    "next": "16.3.2",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "three": "0.179.1",
+    "cesium": "1.132.0"
+  },
+  "overrides": {
+    "@cesium/widgets": "13.0.0",
+    "@zip.js/zip.js": "2.7.70"
+  }
+}

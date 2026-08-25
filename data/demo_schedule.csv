@@ -1,0 +1,4 @@
+activity_id,name,planned_start,planned_finish,actual_start,actual_finish,percent_complete,total_float_days,critical
+A1023,Roof steel installation Zone B,2026-08-10,2026-08-15,2026-08-12,2026-08-19,100,0,true
+A1024,Roof beam installation B-023,2026-08-14,2026-08-15,2026-08-18,2026-08-19,100,0,true
+A1030,Roof painting Zone B,2026-08-16,2026-08-20,,,35,2,false

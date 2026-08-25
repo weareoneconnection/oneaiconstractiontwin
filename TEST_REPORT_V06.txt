@@ -1,0 +1,17 @@
+OneAI Construction Twin Alpha v0.6 validation
+
+- Python compileall: PASSED
+- FastAPI health: 200 / version 0.6.0
+- OpenAPI generation: PASSED / 41 paths
+- Docker Compose YAML parse: PASSED
+- Pytest: 6 passed
+
+Test coverage includes:
+- health and demo flow
+- IFC semantic import and schedule mapping
+- IFC geometry and 4D timeline
+- GLB / 3D Tiles / LOD / spatial streaming
+- distributed jobs and partitions
+- object storage delivery
+- content-addressed cache reuse
+- cancellation and resume

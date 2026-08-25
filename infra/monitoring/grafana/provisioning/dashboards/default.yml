@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: OneAI Construction Twin
+    folder: Construction Twin
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
