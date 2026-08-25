@@ -7,11 +7,19 @@ export default function EnterpriseStatus(){
   useEffect(()=>{
     let active=true;
     const load=async()=>{
+      // Liveness and readiness are reported independently: a service that is up but
+      // not ready (503) must still show its version, and its failing checks must stay
+      // visible. Treating the 503 as an error discarded both.
       try{
         const h=await fetch(`${API}/health`,{cache:"no-store"}).then(r=>r.json());
-        const r=await api("/health/ready");
-        if(active){setHealth(h);setReport(r)}
-      }catch(e){if(active)setReport({status:"not_ready",error:e.message})}
+        if(active)setHealth(h);
+      }catch(e){if(active)setHealth(null)}
+      try{
+        // /health/ready answers 503 with a full report body when a check fails.
+        const response=await fetch(`${API}/health/ready`,{cache:"no-store"});
+        const r=await response.json();
+        if(active)setReport(r);
+      }catch(e){if(active)setReport({status:"unreachable",error:e.message})}
     };
     load(); const timer=setInterval(load,10000);
     return()=>{active=false;clearInterval(timer)};
