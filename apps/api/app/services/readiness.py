@@ -120,6 +120,11 @@ def readiness_report(db: Session) -> tuple[bool, dict[str, object]]:
     required = ["database", "migrations", "object_storage", "asset_worker", "oneai_core"]
     if settings.redis_required:
         required.append("redis")
+    # Tag every check with whether it blocks readiness. Without this a failing
+    # required check is indistinguishable from an optional one, and a consumer
+    # (the dashboard included) presents a blocking failure as merely "optional".
+    for name, result in checks.items():
+        result.setdefault("required", name in required)
     ok = all(bool(checks[name].get("ok")) for name in required)
     for name, result in checks.items():
         READINESS.labels(name).set(1 if result.get("ok") else 0)

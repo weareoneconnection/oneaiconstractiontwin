@@ -592,3 +592,45 @@ def test_object_scoped_credentials_do_not_trigger_a_bucket_create():
     storage_instance._client = lambda: MissingBucketClient()
     storage_instance.ensure_bucket()
     assert calls == ["head", "create"]
+
+
+def test_readiness_marks_which_checks_block_readiness():
+    """A failing required check must not be presentable as optional."""
+    with TestClient(app) as client:
+        report = client.get("/health/ready", headers=headers("readiness-tenant", "readiness-org")).json()
+    checks = report["checks"]
+    assert checks["database"]["required"] is True
+    assert checks["object_storage"]["required"] is True
+    assert checks["migrations"]["required"] is True
+    # Redis is optional unless REDIS_REQUIRED is set.
+    assert checks["redis"]["required"] is settings.redis_required
+
+
+@pytest.mark.parametrize("dialect_name", ["postgresql", "sqlite", "mysql"])
+def test_model_document_filter_compiles_on_every_supported_dialect(dialect_name):
+    """This filter broke only on PostgreSQL, in production.
+
+    The suite runs on SQLite, so a PostgreSQL-only expression error (`.astext` on a
+    generic JSON column) reached a live deployment. Compiling the criterion against
+    each dialect catches that class of bug without needing those databases running.
+    """
+    from sqlalchemy.dialects import mysql, postgresql, sqlite as sqlite_dialect
+
+    from app.services.asset_jobs import _model_document_criterion
+
+    dialects = {
+        "postgresql": postgresql.dialect(),
+        "sqlite": sqlite_dialect.dialect(),
+        "mysql": mysql.dialect(),
+    }
+
+    class FakeBind:
+        dialect = type("Dialect", (), {"name": dialect_name})()
+
+    class FakeSession:
+        bind = FakeBind()
+
+    criterion = _model_document_criterion(FakeSession(), "doc-1")
+    compiled = str(criterion.compile(dialect=dialects[dialect_name], compile_kwargs={"literal_binds": True}))
+    assert "modelDocumentId" in compiled
+    assert "doc-1" in compiled

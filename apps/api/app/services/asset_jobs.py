@@ -378,12 +378,16 @@ def recover_stale_leases(db: Session) -> int:
 
 
 def _model_document_criterion(db: Session, document_id: str):
-    """Push the `external_ids.modelDocumentId` filter into SQL where the dialect allows it."""
+    """Push the `external_ids.modelDocumentId` filter into SQL, portably.
+
+    `.astext` belongs to PostgreSQL's own JSON/JSONB types; this column is the generic
+    JSON type, where it does not exist. `.as_string()` is the portable spelling and
+    compiles to `->>` on PostgreSQL and `JSON_EXTRACT` on SQLite. Dialects without JSON
+    support fall back to the Python-side filter in plan_job.
+    """
     dialect = db.bind.dialect.name if db.bind is not None else ""
-    if dialect == "postgresql":
-        return TwinEntity.external_ids["modelDocumentId"].astext == document_id
-    if dialect == "sqlite":
-        return func.json_extract(TwinEntity.external_ids, "$.modelDocumentId") == document_id
+    if dialect in {"postgresql", "sqlite", "mysql", "mariadb"}:
+        return TwinEntity.external_ids["modelDocumentId"].as_string() == document_id
     return true()
 
 

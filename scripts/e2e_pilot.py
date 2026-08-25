@@ -48,8 +48,22 @@ def main() -> None:
 
     check(client.get("/health"), "liveness")
     check(client.get("/health/ready"), "readiness")
-    seeded = check(client.post("/api/v1/demo/seed"), "demo seed")
-    project_id = seeded["project_id"]
+    # A hardened deployment runs with DEMO_ENDPOINTS_ENABLED=false, which is the
+    # point of the flag. Fall back to creating a project through the normal API so
+    # the chain can still be validated against production-shaped configuration.
+    seed_response = client.post("/api/v1/demo/seed")
+    if seed_response.status_code == 404:
+        print("[SKIP] demo seed (demo endpoints disabled)")
+        created = check(
+            client.post(
+                "/api/v1/projects",
+                json={"name": "E2E Pilot Validation", "code": f"E2E-{int(time.time())}", "description": "created by e2e_pilot.py"},
+            ),
+            "project creation",
+        )
+        project_id = created["id"]
+    else:
+        project_id = check(seed_response, "demo seed")["project_id"]
 
     with (ROOT / "data" / "demo_minimal.ifc").open("rb") as handle:
         imported = check(
