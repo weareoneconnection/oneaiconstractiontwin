@@ -291,3 +291,62 @@
   .grid4{grid-template-columns:1fr}
   .comment.reply{margin-left:10px}
 }
+
+/* ===========================================================================
+   Charts, live state and offline (v0.7.4)
+   ======================================================================== */
+
+.chart{width:100%}
+.chart svg{width:100%;height:auto;display:block;overflow:visible}
+.chart .grid{stroke:rgba(45,86,128,.35);stroke-width:1}
+.chart .axis{fill:#6f8dab;font-size:9px;letter-spacing:.05em}
+.chart .y-label{fill:#8fb0ce}
+.chart .today{stroke:rgba(255,201,107,.55);stroke-width:1;stroke-dasharray:4 4}
+.chart .today-label{fill:#ffc96b}
+.chart .series{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.chart .series.cyan{stroke:var(--cyan)}
+.chart .series.amber{stroke:var(--amber)}
+.chart .series.green{stroke:var(--green)}
+.chart .series.muted{stroke:#5f89b5}
+.chart .marker{fill:var(--bg);stroke-width:2}
+.chart .marker.cyan{stroke:var(--cyan)}
+.chart .marker.amber{stroke:var(--amber)}
+.chart .marker.muted{stroke:#5f89b5}
+.chart-legend{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:8px;font-size:11px;color:#a9c7e6}
+.legend-item{display:inline-flex;align-items:center;gap:6px}
+.legend-item i{width:14px;height:2px;background:currentColor;border-radius:2px}
+.legend-item i.dashed{background:repeating-linear-gradient(90deg,currentColor 0 4px,transparent 4px 7px)}
+.legend-item.cyan{color:var(--cyan)}
+.legend-item.amber{color:var(--amber)}
+.legend-item.green{color:var(--green)}
+.legend-item.muted{color:#5f89b5}
+.legend-item b{color:var(--text)}
+.legend-date{margin-left:auto;color:#6f8dab}
+.chart-empty{display:flex;flex-direction:column;gap:4px;padding:22px;border:1px dashed #22486d;border-radius:12px;background:rgba(7,20,33,.5);text-align:center}
+.chart-empty span{font-size:11px;color:var(--muted);line-height:1.6}
+
+.bar-chart{display:flex;flex-direction:column;gap:6px}
+.bar-chart .bars{flex:1;display:flex;align-items:flex-end;gap:3px;min-height:110px;padding-top:12px}
+.bar-column{flex:1;display:flex;flex-direction:column-reverse;align-items:stretch;gap:1px;position:relative;min-width:6px}
+.bar-segment{border-radius:2px;min-height:0}
+.bar-segment.cyan{background:linear-gradient(180deg,#4fd1ff,#1f7fb8)}
+.bar-segment.amber{background:linear-gradient(180deg,#ffc96b,#a97b2b)}
+.bar-total{position:absolute;top:-13px;left:0;right:0;text-align:center;font-size:9px;color:#6f8dab}
+
+/* --- connection state ---------------------------------------------------- */
+.connection-state{display:inline-flex;align-items:center;gap:7px;padding:7px 11px;border-radius:12px;border:1px solid #28527c;background:#0b1b2e;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#9ddfff}
+.connection-dot{width:8px;height:8px;border-radius:50%;background:#5f89b5}
+.connection-state.live .connection-dot{background:var(--green);box-shadow:0 0 10px var(--green);animation:pulse 2.2s ease-in-out infinite}
+.connection-state.reconnecting .connection-dot{background:var(--amber)}
+.connection-state.offline{border-color:#8e3948;color:#ffc3cc}
+.connection-state.offline .connection-dot{background:var(--red)}
+.connection-state b{color:var(--amber);font-size:9px}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+@media(max-width:900px){
+  .chart svg{min-height:180px}
+  .connection-state span:not(.connection-dot){display:none}
+  .connection-state{padding:7px 9px}
+  .connection-state b{display:inline}
+}
+@media print{.chart .today,.connection-state{display:none}}

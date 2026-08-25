@@ -4,6 +4,7 @@ import { api } from "../../../../../lib/api";
 import { dateTime, shortId } from "../../../../../lib/format";
 import { useSession } from "../../../../../lib/session";
 import { Badge, Card, EmptyState, PermissionButton, Skeleton } from "../../../../../components/ui";
+import { BarChart } from "../../../../../components/ui/Chart";
 import { useToast } from "../../../../../components/ui/Toast";
 import { useProject } from "../layout";
 
@@ -16,8 +17,11 @@ export default function AuditPage() {
   const [verifying, setVerifying] = useState(false);
   const [expanded, setExpanded] = useState(null);
 
+  const [timeline, setTimeline] = useState(null);
+
   useEffect(() => {
     api(`/api/v1/projects/${projectId}/audit`).then(setEntries).catch(error => notify(error.message, "error"));
+    api(`/api/v1/projects/${projectId}/analytics/activity?days=30`).then(setTimeline).catch(() => setTimeline(null));
   }, [projectId]);
 
   const verify = async () => {
@@ -35,6 +39,15 @@ export default function AuditPage() {
 
   return (
     <div className="page">
+      {timeline && (
+        <Card title="Activity over the last 30 days" meta={`${timeline.total_events} audited events, split by actor`}>
+          <BarChart
+            buckets={timeline.buckets}
+            keys={[{ key: "human", label: "Human", tone: "cyan" }, { key: "agent", label: "Agent", tone: "amber" }]}
+          />
+        </Card>
+      )}
+
       <Card
         title="Audit trail"
         meta="Append-only and hash-chained per tenant: editing or deleting an entry breaks the chain"

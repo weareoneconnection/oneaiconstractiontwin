@@ -222,3 +222,123 @@ def test_portfolio_summary_compares_projects_within_the_tenant():
         # Another tenant sees none of it.
         foreign = client.get("/api/v1/portfolio/summary", headers=headers("outsider", "outsider-org")).json()
         assert not {row["id"] for row in foreign["projects"]} & ids
+
+
+# ----------------------------------------------------------------- analytics
+
+
+def test_s_curve_is_derived_from_activity_dates_and_never_drawn_into_the_future():
+    """There is no progress-history table, so the curve must come from the schedule.
+
+    The actual series must stop at today: extending it would draw completion for dates
+    that have not happened.
+    """
+    tenant, organization = "curve-tenant", "curve-org"
+    with TestClient(app) as client:
+        head = headers(tenant, organization)
+        project_id = seed(client, tenant, organization)
+        curve = client.get(f"/api/v1/projects/{project_id}/analytics/s-curve", headers=head).json()
+
+        assert curve["available"] is True
+        assert curve["method"] == "count-weighted-s-curve"
+        assert "cost" in curve["weighting"]  # the limitation is stated, not hidden
+        assert len(curve["series"]) > 1
+
+        planned = [point["planned"] for point in curve["series"]]
+        assert planned == sorted(planned), "a cumulative baseline cannot decrease"
+        assert planned[-1] == 100.0
+
+        today = curve["today"]
+        for point in curve["series"]:
+            if point["date"] > today:
+                assert point["actual"] is None, "actual completion must not extend past today"
+
+
+def test_s_curve_reports_absence_instead_of_inventing_a_baseline():
+    with TestClient(app) as client:
+        head = headers("empty-curve-tenant", "empty-curve-org")
+        created = client.post("/api/v1/projects", headers=head, json={"name": "No schedule", "code": "NC-1"}).json()
+        curve = client.get(f"/api/v1/projects/{created['id']}/analytics/s-curve", headers=head).json()
+        assert curve["available"] is False
+        assert "planned finish" in curve["reason"]
+        assert curve["series"] == []
+
+
+def test_slippage_trend_accumulates_only_real_overruns():
+    tenant, organization = "slip-tenant", "slip-org"
+    with TestClient(app) as client:
+        head = headers(tenant, organization)
+        project_id = seed(client, tenant, organization)
+        trend = client.get(f"/api/v1/projects/{project_id}/analytics/slippage", headers=head).json()
+        assert trend["available"] is True
+        assert all(point["slip_days"] > 0 for point in trend["points"])
+        cumulative = [point["cumulative_slip_days"] for point in trend["points"]]
+        assert cumulative == sorted(cumulative)
+        assert trend["total_slip_days"] == cumulative[-1]
+
+
+def test_activity_timeline_separates_human_and_agent_actions():
+    tenant, organization = "timeline-tenant", "timeline-org"
+    with TestClient(app) as client:
+        head = headers(tenant, organization)
+        project_id = seed(client, tenant, organization)
+        client.post(f"/api/v1/projects/{project_id}/agents/run", headers=head,
+                    json={"agent": "project_director", "task": "Propose mitigation"})
+        timeline = client.get(f"/api/v1/projects/{project_id}/analytics/activity", headers=head).json()
+        assert timeline["total_events"] >= 1
+        assert sum(bucket["agent"] for bucket in timeline["buckets"]) >= 1
+
+        # Reading the audit-derived timeline requires the audit permission.
+        contractor = headers(tenant, organization, "contractor")
+        assert client.get(f"/api/v1/projects/{project_id}/analytics/activity", headers=contractor).status_code == 403
+
+
+# ------------------------------------------------------------------ realtime
+
+
+def test_project_events_stream_delivers_comments_live():
+    """The socket is an accelerator: a comment posted over HTTP must arrive on it."""
+    tenant, organization = "ws-tenant", "ws-org"
+    with TestClient(app) as client:
+        head = headers(tenant, organization)
+        project_id = seed(client, tenant, organization)
+        query = f"?tenant_id={tenant}&organization_id={organization}&role=platform_admin"
+        with client.websocket_connect(f"/api/v1/ws/projects/{project_id}{query}") as socket:
+            hello = socket.receive_json()
+            assert hello["type"] == "connected"
+            assert "accelerator" in hello["note"]
+
+            client.post(f"/api/v1/projects/{project_id}/comments", headers=head, json={"body": "Live note"})
+            event = socket.receive_json()
+            assert event["type"] == "comment.created"
+            assert event["payload"]["body"] == "Live note"
+            assert event["project_id"] == project_id
+
+
+def test_event_stream_rejects_an_unauthenticated_socket(monkeypatch):
+    """Without credentials the socket is closed with a policy violation, not accepted."""
+    import pytest
+    from starlette.websockets import WebSocketDisconnect
+
+    from app.core.config import settings as live_settings
+
+    monkeypatch.setattr(live_settings, "allow_dev_header_auth", False)
+    with TestClient(app) as client:
+        with pytest.raises(WebSocketDisconnect) as raised:
+            with client.websocket_connect("/api/v1/ws/projects/some-project") as socket:
+                socket.receive_json()
+        assert raised.value.code == 1008
+
+
+def test_event_payloads_survive_json_serialisation():
+    """ORM rows carry datetimes; an unserialisable payload used to close the socket."""
+    tenant, organization = "ws-json-tenant", "ws-json-org"
+    with TestClient(app) as client:
+        head = headers(tenant, organization)
+        project_id = seed(client, tenant, organization)
+        query = f"?tenant_id={tenant}&organization_id={organization}&role=platform_admin"
+        with client.websocket_connect(f"/api/v1/ws/projects/{project_id}{query}") as socket:
+            socket.receive_json()
+            client.post(f"/api/v1/projects/{project_id}/comments", headers=head, json={"body": "Serialisation check"})
+            event = socket.receive_json()
+            assert isinstance(event["payload"]["created_at"], str)

@@ -101,3 +101,43 @@ false confidence the rest of the product works to avoid.
 project director, project manager, planner, QA/QC, safety, contractor). `viewer` and
 `ai_agent` may read discussion but not post: an agent proposes through
 `agent_action`, which requires human approval.
+
+
+## v0.7.4 — analytics and live events
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/projects/{id}/analytics/s-curve` | `project:read` | Planned vs actual cumulative completion, derived from activity dates |
+| GET | `/api/v1/projects/{id}/analytics/slippage` | `project:read` | Cumulative finish-date slippage as it accrued |
+| GET | `/api/v1/projects/{id}/analytics/activity` | `audit:read` | Audited events per day, split between human and agent actors |
+| WS | `/api/v1/ws/projects/{id}` | `project:read` | Live project events: comments, agent recommendations, approvals, asset jobs |
+
+### The S-curve is derived, not stored
+
+This system holds no progress-history table, so a "progress over time" line could only be
+invented. What is real is the schedule, so both curves are computed from activity dates:
+
+- `planned` — the cumulative share of activities the baseline expected complete by each date
+- `actual` — the cumulative share actually complete, **only up to today**; later points
+  return `null` rather than projecting completion into dates that have not happened
+- `weighting` — count-weighted, stated in every response: each activity counts once,
+  because activity cost and resource loading are not held by this system. A count-weighted
+  curve reads differently from the cost-loaded curve a planner expects.
+
+A project without planned finish dates gets `available: false` and a reason, not an empty
+chart that looks like zero progress.
+
+### WebSocket authentication and delivery
+
+A browser cannot set headers on a WebSocket handshake, so the access token is passed as
+`?token=`. That is standard over TLS, but the token does appear in proxy access logs.
+Development header auth (`?tenant_id=&organization_id=&role=`) is honoured only outside
+production, exactly as for HTTP.
+
+Events are published to Redis and relayed by every replica, so the channel works behind
+more than one API instance. Without Redis it still works within a single process, and the
+`connected` frame reports `cross_replica: false` rather than pretending otherwise.
+
+**The socket is an accelerator, never the source of truth.** Clients keep their existing
+polling; the socket only makes updates arrive sooner. A dropped connection degrades
+latency, not correctness.

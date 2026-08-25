@@ -17,6 +17,7 @@ from app.core.security import RequestContext
 from app.core.time import utcnow
 from app.domain.models import Comment, Project
 from app.services.audit import audit
+from app.services.realtime import hub
 
 MAX_BODY = 4000
 TARGET_TYPES = {"project", "twin_entity", "activity", "risk", "agent_action", "document"}
@@ -131,7 +132,9 @@ def create_comment(
     )
     db.commit()
     db.refresh(row)
-    return to_dict(row)
+    result = to_dict(row)
+    hub.publish(ctx.tenant_id, project_id, "comment.created", result)
+    return result
 
 
 def resolve_comment(db: Session, ctx: RequestContext, project_id: str, comment_id: str, resolved: bool) -> dict[str, Any]:
@@ -154,4 +157,6 @@ def resolve_comment(db: Session, ctx: RequestContext, project_id: str, comment_i
           before=before, after={"resolved": resolved})
     db.commit()
     db.refresh(row)
-    return to_dict(row)
+    result = to_dict(row)
+    hub.publish(ctx.tenant_id, project_id, "comment.resolved" if resolved else "comment.reopened", result)
+    return result

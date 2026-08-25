@@ -9,6 +9,7 @@ from app.core.security import RequestContext, get_context, require
 from app.db.session import get_db
 from app.services.collaboration import create_comment, list_comments, resolve_comment
 from app.services.exports import export_csv, project_report
+from app.services.analytics import activity_timeline, schedule_curve, slippage_trend
 from app.services.portfolio import portfolio_summary
 
 router = APIRouter(prefix="/api/v1", tags=["collaboration-and-reporting"])
@@ -107,3 +108,31 @@ def export_dataset(
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/projects/{project_id}/analytics/s-curve")
+def s_curve(project_id: str, db: Session = Depends(get_db), ctx: RequestContext = Depends(get_context)):
+    """Planned vs actual cumulative completion, derived from activity dates."""
+    require(ctx, "project:read")
+    try:
+        return schedule_curve(db, ctx, project_id)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@router.get("/projects/{project_id}/analytics/slippage")
+def slippage(project_id: str, db: Session = Depends(get_db), ctx: RequestContext = Depends(get_context)):
+    require(ctx, "project:read")
+    return slippage_trend(db, ctx, project_id)
+
+
+@router.get("/projects/{project_id}/analytics/activity")
+def activity(
+    project_id: str,
+    days: int = Query(default=30, ge=1, le=365),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_context),
+):
+    """Audited events per day, split between human and agent actors."""
+    require(ctx, "audit:read")
+    return activity_timeline(db, ctx, project_id, days)

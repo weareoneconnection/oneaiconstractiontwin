@@ -22,6 +22,7 @@ from app.domain.models import (
 )
 from app.services.object_storage import storage
 from app.services.asset_metrics import ASSET_CACHE_HITS, ASSET_JOBS_CREATED
+from app.services.realtime import hub
 from app.services.worker_signal import notify_workers
 
 TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
@@ -223,6 +224,7 @@ def create_job(
     ASSET_JOBS_CREATED.inc()
     emit_event(db, job, "job.queued", "Distributed asset build queued", 0.0, {"cache_key": cache_key})
     db.commit(); db.refresh(job)
+    hub.publish(ctx.tenant_id, project_id, "asset_job.queued", job_to_dict(job))
     notify_workers(max(1, min(normalized["partition_max_entities"], 8)))
     return job, False
 

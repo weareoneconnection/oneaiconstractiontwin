@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { since } from "../lib/format";
 import { roleLabel, useSession } from "../lib/session";
+import { queueComment } from "../lib/offline";
 import { Badge, EmptyState, PermissionButton, Skeleton } from "./ui";
 import { useToast } from "./ui/Toast";
 
@@ -30,6 +31,21 @@ export default function CommentThread({ projectId, targetType = "project", targe
 
   useEffect(() => { load().catch(error => notify(error.message, "error")); }, [projectId, targetType, targetId]);
 
+  // Live updates arrive on the shell's socket. The slow reload above remains the source
+  // of truth; this only removes the wait.
+  useEffect(() => {
+    const onEvent = event => {
+      const message = event.detail;
+      if (!message?.type?.startsWith("comment.")) return;
+      const payload = message.payload || {};
+      if (payload.target_type !== targetType) return;
+      if (targetId && payload.target_id !== targetId) return;
+      load().catch(() => {});
+    };
+    window.addEventListener("twin:event", onEvent);
+    return () => window.removeEventListener("twin:event", onEvent);
+  }, [projectId, targetType, targetId]);
+
   const submit = async event => {
     event.preventDefault();
     if (!body.trim()) return;
@@ -43,7 +59,15 @@ export default function CommentThread({ projectId, targetType = "project", targe
       setReplyTo(null);
       await load();
     } catch (error) {
-      notify(error.message, "error");
+      // A note written on site must not be lost because the connection dropped.
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        queueComment({ project_id: projectId, body, target_type: targetType, target_id: targetId, parent_id: replyTo });
+        setBody("");
+        setReplyTo(null);
+        notify("Offline — this comment is queued and will be sent when you reconnect", "warn");
+      } else {
+        notify(error.message, "error");
+      }
     } finally {
       setBusy(false);
     }

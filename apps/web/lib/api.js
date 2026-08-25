@@ -37,6 +37,19 @@ export async function api(path, options={}, { allowRetry = true } = {}) {
       cache:"no-store",
     });
   } catch (cause) {
+    // Offline: serve the last good copy of a GET rather than an error page, and let the
+    // caller show how old it is. Writes are never satisfied from cache.
+    const method = (options.method || "GET").toUpperCase();
+    if (method === "GET" && typeof window !== "undefined" && !navigator.onLine) {
+      const { readCache } = await import("./offline");
+      const cached = readCache(path);
+      if (cached) {
+        const stale = new Error("offline");
+        stale.cached = cached.data;
+        stale.cachedAt = cached.at;
+        throw stale;
+      }
+    }
     // fetch() rejects without status for DNS failures, blocked mixed content and
     // CORS rejections alike, so name the target explicitly.
     throw new Error(
@@ -56,7 +69,12 @@ export async function api(path, options={}, { allowRetry = true } = {}) {
   }
   if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
   const type = res.headers.get("content-type") || "";
-  return type.includes("application/json") ? res.json() : res.text();
+  const payload = type.includes("application/json") ? await res.json() : await res.text();
+  if ((options.method || "GET").toUpperCase() === "GET" && typeof window !== "undefined") {
+    const { cacheResponse } = await import("./offline");
+    cacheResponse(path, payload);
+  }
+  return payload;
 }
 
 /**

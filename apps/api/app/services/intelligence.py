@@ -26,6 +26,7 @@ from app.integrations.oneai import OneAICoreAdapter
 from app.services.audit import audit
 from app.services.evidence_search import search_evidence
 from app.services.events import emit
+from app.services.realtime import hub
 from app.services.schedule_analytics import ScheduleSample, collect_schedule_sample
 
 core = OneAICoreAdapter()
@@ -519,6 +520,7 @@ def run_agent(db: Session, ctx: RequestContext, project_id: str, agent: str, tas
     )
     db.commit()
     db.refresh(row)
+    hub.publish(ctx.tenant_id, project_id, "agent.recommendation", {"id": row.id, "agent": agent, "status": row.status})
     return row
 
 
@@ -551,4 +553,6 @@ def approve_action(db: Session, ctx: RequestContext, action_id: str):
     emit(db, "action.approved", "agent_action", row.id, {"project_id": row.project_id})
     db.commit()
     db.refresh(row)
+    hub.publish(ctx.tenant_id, row.project_id, "action.approved",
+                {"id": row.id, "agent": row.agent, "status": row.status, "approved_by": row.approved_by})
     return row

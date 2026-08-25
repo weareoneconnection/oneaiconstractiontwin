@@ -6,6 +6,8 @@ import { API, api } from "../../lib/api";
 import { currentIdentity, logout } from "../../lib/auth";
 import { roleLabel, useSession } from "../../lib/session";
 import ProjectSwitcher from "./ProjectSwitcher";
+import ConnectionState from "./ConnectionState";
+import { useProjectEvents } from "../../lib/realtime";
 
 function NavLink({ href, label, hint, exact }) {
   const pathname = usePathname();
@@ -70,6 +72,11 @@ export default function AppShell({ children }) {
   }, [pathname]);
 
   const scope = projectId ? `/projects/${projectId}` : null;
+  // One socket per project for the whole shell; pages subscribe through a context event
+  // rather than each opening their own connection.
+  const liveStatus = useProjectEvents(projectId, message => {
+    window.dispatchEvent(new CustomEvent("twin:event", { detail: message }));
+  });
 
   return (
     <div className={`app-shell ${navOpen ? "nav-open" : ""}`}>
@@ -114,6 +121,7 @@ export default function AppShell({ children }) {
         <header className="workspace-bar">
           <ProjectSwitcher currentId={projectId} />
           <div className="status-cluster">
+            <ConnectionState live={projectId ? liveStatus : null} />
             <ReadinessBadge />
             {(identity || me) && (
               <div className="identity-chip" title={me ? `${me.user_id} · ${me.auth_source}` : ""}>

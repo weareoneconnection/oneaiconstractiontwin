@@ -47,6 +47,9 @@ This is the cumulative, runnable codebase for the OneAI Construction Twin Enterp
   recommendations, recorded in the audit chain
 - Reporting: printable project status report and audited CSV exports
 - Mobile layout with an off-canvas drawer and card-based tables
+- Trend charts derived from schedule data (planned-vs-actual S-curve, slippage, activity)
+- Live project events over WebSocket, with Redis fan-out across API replicas
+- Offline-capable: cached shell and reads, queued comments that flush on reconnect
 - OIDC sign-in with PKCE, session refresh and provider sign-out
 - Permission-aware controls driven by the API's own `/auth/me` response
 - Loading, empty and error states throughout; provenance shown beside every AI-derived number

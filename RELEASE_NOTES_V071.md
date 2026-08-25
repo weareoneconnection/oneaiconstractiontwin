@@ -111,6 +111,24 @@ Beyond the routing:
 - **Mobile**: an off-canvas navigation drawer, larger touch targets, and tables that
   become labelled cards instead of a six-column grid squeezed onto a phone.
 
+## Charts, live collaboration and offline (v0.7.4)
+
+- **Trend charts** drawn as inline SVG (no charting dependency): the planned-vs-actual
+  S-curve with a today marker, cumulative slippage, and audited activity per day split
+  by human and agent actor. Every chart states its method and refuses to render a series
+  it cannot derive.
+- **Live events** over a WebSocket per project: comments, agent recommendations,
+  approvals and asset-job state arrive without a refresh. Events fan out through Redis so
+  the channel survives multiple API replicas, and the client keeps polling underneath —
+  the socket is an accelerator, not the source of truth.
+- **Offline support for site use**: a service worker caches the application shell, GET
+  responses are cached read-through with the time they were fetched, and comments written
+  without a connection are queued locally and flushed on reconnect. Only comments are
+  queued — replaying an approval or an import after an unknown delay could act on a state
+  that no longer exists.
+- A connection indicator shows Live / Online / Reconnecting / Offline and how many writes
+  are waiting to be sent.
+
 ## Test coverage
 
 31 automated tests (was 8), including regression tests for every defect above, plus

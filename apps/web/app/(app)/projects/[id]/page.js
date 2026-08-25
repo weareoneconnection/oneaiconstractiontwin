@@ -5,16 +5,23 @@ import { api } from "../../../../lib/api";
 import { percent } from "../../../../lib/format";
 import { Card, Badge, EmptyState, Metric, Skeleton } from "../../../../components/ui";
 import CommentThread from "../../../../components/CommentThread";
+import { LineChart } from "../../../../components/ui/Chart";
 import { useProject } from "./layout";
 
 export default function ProjectOverview() {
   const { project, entities, projectId } = useProject();
   const [status, setStatus] = useState(null);
+  const [curve, setCurve] = useState(null);
+  const [slippage, setSlippage] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     api(`/api/v1/projects/${projectId}/pilot-status`).then(setStatus).catch(e => setError(e.message));
+    api(`/api/v1/projects/${projectId}/analytics/s-curve`).then(setCurve).catch(() => setCurve(null));
+    api(`/api/v1/projects/${projectId}/analytics/slippage`).then(setSlippage).catch(() => setSlippage(null));
   }, [projectId]);
+
+  const todayIndex = curve?.series?.findIndex(point => point.date >= curve.today);
 
   const variance = project.actual_progress - project.planned_progress;
 
@@ -26,6 +33,45 @@ export default function ProjectOverview() {
         <Metric label="Forecast delay" value={`${project.forecast_delay_days} d`} sub="Recorded project baseline" tone={project.forecast_delay_days > 0 ? "warn" : "good"} />
         <Metric label="Twin entities" value={entities.length} sub="Project World Model" />
       </div>
+
+      <Card
+        title="Progress against baseline"
+        meta={curve?.available ? `${curve.method} · ${curve.activity_count} activities` : "Derived from activity dates"}
+      >
+        {curve?.available ? (
+          <>
+            <LineChart
+              points={curve.series}
+              todayIndex={todayIndex}
+              yLabel="%"
+              series={[
+                { key: "planned", label: "Planned", tone: "muted", dashed: true },
+                { key: "actual", label: "Actual", tone: "cyan" },
+              ]}
+            />
+            <div className="provenance">
+              {curve.note} Weighting: {curve.weighting}.
+              {curve.current && ` Latest variance ${curve.current.variance > 0 ? "+" : ""}${curve.current.variance}%.`}
+            </div>
+          </>
+        ) : (
+          <div className="chart-empty">
+            <b>No baseline curve</b>
+            <span>{curve?.reason || "Import a schedule with planned finish dates."}</span>
+          </div>
+        )}
+      </Card>
+
+      {slippage?.available && (
+        <Card title="Accumulated slippage" meta={`${slippage.total_slip_days} days across ${slippage.points.length} completed activities`}>
+          <LineChart
+            points={slippage.points}
+            yLabel="days"
+            series={[{ key: "cumulative_slip_days", label: "Cumulative slip", tone: "amber" }]}
+          />
+          <div className="provenance">{slippage.note}</div>
+        </Card>
+      )}
 
       <Card title="Pilot readiness" meta="What this project still needs before it can demonstrate the full chain">
         {!status && !error && <Skeleton lines={3} />}
