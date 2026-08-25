@@ -489,3 +489,22 @@ def test_libpq_tools_get_a_url_they_understand():
     # pg_dump/pg_restore reject SQLAlchemy's +driver suffix.
     configured = Settings(database_url="postgresql://u:p@host:5432/railway")
     assert configured.libpq_database_url == "postgresql://u:p@host:5432/railway"
+
+
+def test_empty_database_url_fails_with_an_actionable_message():
+    """An unresolved platform variable arrives as '', not as 'unset'.
+
+    SQLAlchemy's own error ("Could not parse SQLAlchemy URL from string ''") gives the
+    operator nothing to act on, and it repeats on every container restart.
+    """
+    with pytest.raises(ValueError) as raised:
+        Settings(database_url="")
+    assert "DATABASE_URL is set but empty" in str(raised.value)
+
+    with pytest.raises(ValueError):
+        Settings(database_url="   ")
+
+
+def test_empty_redis_url_falls_back_instead_of_stopping_the_service():
+    # Redis is a cache and wake-up channel, not a system of record.
+    assert Settings(redis_url="").redis_url.startswith("redis://")

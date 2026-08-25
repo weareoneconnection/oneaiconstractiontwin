@@ -165,17 +165,37 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def normalize_database_url(self) -> "Settings":
-        """Pin the PostgreSQL driver to psycopg 3, which is what this project ships.
+        """Validate and normalise the database URL before anything tries to connect.
 
-        Managed platforms (Railway, Render, Heroku, Fly) hand out `postgresql://` or the
-        legacy `postgres://`. SQLAlchemy maps both to psycopg2, which is not installed,
-        so the process would die at startup with `No module named 'psycopg2'`.
+        Two failure modes are handled here because both produce unreadable errors
+        otherwise:
+
+        * An empty value. A platform variable that references a service which does not
+          resolve (a misspelled `${{Postgres.DATABASE_URL}}`) arrives as an empty
+          string, which overrides the default and reaches SQLAlchemy as ''. The
+          resulting `Could not parse SQLAlchemy URL from string ''` says nothing about
+          the cause, and it repeats on every restart.
+        * A driver-less PostgreSQL URL. Managed platforms hand out `postgresql://` or
+          the legacy `postgres://`; SQLAlchemy maps both to psycopg2, which this project
+          does not ship, so the process dies with `No module named 'psycopg2'`.
         """
-        url = self.database_url
+        url = (self.database_url or "").strip()
+        if not url:
+            raise ValueError(
+                "DATABASE_URL is set but empty. On a managed platform this usually means "
+                "a variable reference did not resolve - on Railway use the reference "
+                "${{Postgres.DATABASE_URL}} (the service name must match exactly). "
+                "Remove the variable entirely to fall back to local SQLite."
+            )
+        self.database_url = url
         for prefix in ("postgresql://", "postgres://"):
             if url.startswith(prefix):
                 self.database_url = "postgresql+psycopg://" + url[len(prefix):]
                 break
+        # Redis is a cache and wake-up channel rather than a system of record, so an
+        # empty value falls back to the default instead of stopping the service.
+        if not (self.redis_url or "").strip():
+            self.redis_url = type(self).model_fields["redis_url"].default
         return self
 
     @model_validator(mode="after")

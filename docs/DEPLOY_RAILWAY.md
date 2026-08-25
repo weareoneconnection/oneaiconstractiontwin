@@ -75,6 +75,13 @@ behaviour rather than a deployment failure.
 
 Variables: copy `.env.railway.example`, and set `AUTO_MIGRATE=true`.
 
+Add `DATABASE_URL` and `REDIS_URL` through **Variables → Add a Reference**, picking the
+Postgres and Redis services from the list, rather than typing `${{Postgres.DATABASE_URL}}`
+as text. A reference to a service name that does not match exactly resolves to an empty
+string, which is silently accepted as a variable and then rejected at startup. After
+saving, the Variables tab shows the resolved value - confirm it begins with
+`postgresql://` before redeploying.
+
 If the build log still shows `railpack prepare`, the service is not seeing the root
 `Dockerfile`: check that the service's root directory is `/` and that the deployment is
 building the commit that contains it.
@@ -233,6 +240,8 @@ Object storage on R2 at pilot volumes is negligible.
 | Redirect loop | `FORCE_HTTPS=true` without `--proxy-headers` (already handled in the shipped Dockerfile) |
 | Startup error about production configuration | Expected: see the production-mode table above |
 | Container crashes with `No module named 'psycopg2'` | Fixed in v0.7.1: the app rewrites `postgresql://` to `postgresql+psycopg://`. If you see it, the deployment predates that fix |
+| `DATABASE_URL is set but empty` | The variable reference did not resolve. Add it with **Variables → Add a Reference**, choosing the Postgres service, rather than typing `${{...}}` by hand - the service name must match exactly (it is case-sensitive) |
+| `Could not parse SQLAlchemy URL from string ''` | Same cause, on a deployment that predates the readable error |
 | Container starts then every request 400s | `TRUSTED_HOSTS` empty or missing the generated domain - it is only populated after a public domain exists |
 | Build log shows `railpack prepare` | The service is not using a Dockerfile: the API/worker need root directory `/`; the web service needs `RAILWAY_DOCKERFILE_PATH` |
 | `COPY failed: ... not found` during build | A root directory was set on the service; the Dockerfiles expect the repository root as build context |
