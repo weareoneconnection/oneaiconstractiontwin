@@ -1,21 +1,31 @@
 """OneAI ecosystem adapters.
 
-The construction twin does not embed a reasoning model. It either calls the
-configured OneAI Core gateway, or it runs a local, deterministic reasoner that
-composes an answer from the project's own retrieved records.
+Each adapter is configured by a URL. An empty URL means the capability is absent, and
+every call then returns a result that says so — no adapter fabricates success, because a
+fabricated integration result is indistinguishable from a working one until it matters.
 
-The local reasoner is explicitly labelled `demonstrative-local` in every response
-so that no caller, dashboard or report can mistake a template for a domain model.
+Failures degrade in the way each capability deserves:
+
+* **OneAI Core** (reasoning) falls back to the local deterministic reasoner and labels
+  the answer `degraded-local-fallback`.
+* **OneField** (memory) and **OneForge** (evaluation) fail soft: they are enrichment, and
+  the request they accompany must still succeed.
+* **OneClaw** (actuation) fails closed, and is additionally gated behind an explicit
+  opt-in. Acting on a construction site is not something a URL should be able to enable
+  by itself.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
 from app.core.config import settings
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -27,6 +37,88 @@ class OneAIResult:
     @property
     def is_model_backed(self) -> bool:
         return bool(self.metadata.get("model_backed"))
+
+
+class _Service:
+    """Shared HTTP behaviour: auth header, timeout, and a uniform probe.
+
+    Configuration is read on every access rather than captured in __init__. Adapters are
+    module-level singletons, so capturing at construction time froze whatever the
+    environment happened to be at import — which made the integration impossible to
+    reconfigure or to test.
+    """
+
+    name = "service"
+    url_field = ""
+    key_field = ""
+
+    @property
+    def _url(self) -> str:
+        return str(getattr(settings, self.url_field, "") or "").rstrip("/")
+
+    @property
+    def _api_key(self) -> str:
+        return str(getattr(settings, self.key_field, "") or "")
+
+    @property
+    def configured(self) -> bool:
+        return bool(self._url)
+
+    @property
+    def base_url(self) -> str:
+        return self._url
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json", "User-Agent": f"construction-twin/{settings.app_version}"}
+        if self._api_key:
+            headers["Authorization"] = f"Bearer {self._api_key}"
+        return headers
+
+    def _redact(self, text: str) -> str:
+        """Never let a key reach a log line or an API response."""
+        key = self._api_key
+        return text.replace(key, "***") if key and key in text else text
+
+    async def _post(self, path: str, payload: dict[str, Any], timeout: float | None = None) -> dict[str, Any]:
+        async with httpx.AsyncClient(timeout=timeout or settings.integration_timeout_seconds) as client:
+            response = await client.post(f"{self._url}{path}", headers=self._headers(), json=payload)
+            response.raise_for_status()
+            return dict(response.json())
+
+    async def probe(self) -> dict[str, Any]:
+        """Liveness of the remote service, used by readiness and the admin view."""
+        if not self.configured:
+            return {"service": self.name, "configured": False, "reachable": False, "detail": "No URL configured"}
+        import time
+
+        started = time.perf_counter()
+        for path in ("/health", "/healthz", "/"):
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.get(f"{self._url}{path}", headers=self._headers())
+                if response.status_code < 500:
+                    return {
+                        "service": self.name,
+                        "configured": True,
+                        "reachable": True,
+                        "status_code": response.status_code,
+                        "probe_path": path,
+                        "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+                        "url": self._url,
+                    }
+            except Exception as exc:  # try the next candidate path
+                last_error = str(exc)
+                continue
+        else:
+            last_error = locals().get("last_error", "no health endpoint responded")
+        return {
+            "service": self.name,
+            "configured": True,
+            "reachable": False,
+            "detail": last_error,
+            "latency_ms": round((time.perf_counter() - started) * 1000, 2),
+            "url": self._url,
+        }
 
 
 def _local_reasoning(prompt: str, context: dict[str, Any]) -> OneAIResult:
@@ -67,68 +159,204 @@ def _local_reasoning(prompt: str, context: dict[str, Any]) -> OneAIResult:
     )
 
 
-class OneAICoreAdapter:
-    """Calls the OneAI Core gateway when configured; otherwise reasons locally."""
+SYSTEM_PROMPT = """You are the reasoning engine of a construction digital twin.
+
+Answer ONLY from the project records supplied in the user message. These records are the
+complete evidence available to you.
+
+Rules, in order of precedence:
+1. If the records do not support an answer, say exactly that and stop. Never fill a gap
+   with general construction knowledge, an assumption, or a plausible guess.
+2. Cite the record identifiers you used, in square brackets, e.g. [DR-241].
+3. Do not invent dates, quantities, activity identifiers or causes that are not in the
+   records. Quantities and dates must be copied, not estimated.
+4. State a cause only if a record states it. If records show correlation but not cause,
+   say what the records show and that the cause is not established.
+5. Be concise: a site team reads this on a phone. Three or four sentences.
+
+You are answering for a contractual, safety-relevant context. An answer that is honest
+about what is unknown is more valuable than one that sounds complete."""
+
+
+def _build_messages(question: str, context: dict[str, Any]) -> list[dict[str, str]]:
+    """Compose an evidence-grounded prompt.
+
+    The model receives the retrieved records and the measured schedule position, and
+    nothing else. Everything it is allowed to assert therefore has a source the caller
+    can open.
+    """
+    lines: list[str] = ["PROJECT RECORDS", ""]
+    records = context.get("evidence_records") or []
+    if records:
+        for record in records:
+            lines.append(f"[{record.get('source_id')}] ({record.get('source_type')}) {record.get('content')}")
+    else:
+        lines.append("(No project record matched this question.)")
+
+    lines += ["", "MEASURED POSITION", ""]
+    lines.append(f"Project: {context.get('project')}")
+    lines.append(f"Planned progress: {context.get('planned')}% · actual progress: {context.get('actual')}%")
+    if context.get("forecast_delay_days") is not None:
+        lines.append(f"Recorded baseline delay: {context.get('forecast_delay_days')} days")
+    late = context.get("late_activities") or []
+    if late:
+        lines.append("Activities behind plan (measured from the schedule):")
+        for item in late:
+            lines.append(f"  - {item.get('external_id')} {item.get('name')}: slipped {item.get('slip_days')} days")
+    else:
+        lines.append("No activity is recorded as behind plan.")
+
+    lines += ["", "QUESTION", "", question]
+    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": "\n".join(lines)}]
+
+
+class OneAICoreAdapter(_Service):
+    """Reasoning gateway (OpenAI-compatible). Falls back to the local reasoner, never to silence."""
+
+    name = "oneai_core"
+    url_field = "oneai_core_url"
+    key_field = "oneai_core_api_key"
 
     async def reason(self, prompt: str, context: dict[str, Any]) -> OneAIResult:
-        if not settings.oneai_core_url:
+        if not self.configured:
             return _local_reasoning(prompt, context)
-        headers = {"Content-Type": "application/json"}
-        if settings.oneai_core_api_key:
-            headers["Authorization"] = f"Bearer {settings.oneai_core_api_key}"
+
+        body = {
+            "model": settings.oneai_core_model,
+            "messages": _build_messages(prompt, context),
+            "max_completion_tokens": settings.oneai_core_max_tokens,
+            "temperature": settings.oneai_core_temperature,
+        }
         try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.post(
-                    settings.oneai_core_url.rstrip("/") + "/v1/reason",
-                    headers=headers,
-                    json={"prompt": prompt, "context": context},
-                )
-                response.raise_for_status()
-                payload = response.json()
-        except Exception as exc:  # network, timeout, non-2xx or malformed payload
+            payload = await self._post("/v1/chat/completions", body)
+        except Exception as exc:
             result = _local_reasoning(prompt, context)
-            result.metadata.update({"mode": "degraded-local-fallback", "provider_error": str(exc)})
+            result.metadata.update({"mode": "degraded-local-fallback", "provider_error": self._redact(str(exc))})
+            log.warning("OneAI Core unavailable, answered locally: %s", self._redact(str(exc)))
             return result
 
-        text = str(payload.get("text") or payload.get("answer") or "").strip()
+        choices = payload.get("choices") or []
+        text = ""
+        if choices:
+            text = str((choices[0].get("message") or {}).get("content") or "").strip()
         if not text:
             result = _local_reasoning(prompt, context)
-            result.metadata.update({"mode": "degraded-local-fallback", "provider_error": "empty response"})
+            result.metadata.update({"mode": "degraded-local-fallback", "provider_error": "empty completion"})
             return result
+
+        trace = payload.get("oneai", {}).get("trace", {}) if isinstance(payload.get("oneai"), dict) else {}
+        usage = payload.get("usage") or {}
         return OneAIResult(
             text=text,
-            confidence=float(payload.get("confidence", 0.7)),
+            # The gateway returns no calibrated confidence, and inventing one would be
+            # exactly the false precision this product removes elsewhere. The caller
+            # scales this by measured evidence coverage.
+            confidence=0.75,
             metadata={
-                "provider": "oneai-core",
-                "model": str(payload.get("model") or "unspecified"),
+                "provider": str(payload.get("provider") or "oneai-core"),
+                "model": str(payload.get("model") or settings.oneai_core_model),
                 "mode": "gateway",
                 "model_backed": True,
+                "request_id": payload.get("id"),
+                "routed_mode": trace.get("mode"),
+                "fallback_used": trace.get("fallbackUsed"),
+                "latency_ms": trace.get("latencyMs"),
+                "usage": {
+                    "prompt_tokens": usage.get("prompt_tokens"),
+                    "completion_tokens": usage.get("completion_tokens"),
+                    "total_tokens": usage.get("total_tokens"),
+                    "estimated_cost_usd": usage.get("estimated_cost_usd"),
+                },
             },
         )
 
 
-class OneFieldAdapter:
-    """Long-term project memory. Not wired into the pilot; calls are no-ops."""
+class OneFieldAdapter(_Service):
+    """Long-term project memory. Enrichment: it must never fail the request it rides on."""
 
-    configured = False
+    name = "onefield"
+    url_field = "onefield_url"
+    key_field = "onefield_api_key"
 
     async def remember(self, project_id: str, event: dict[str, Any]) -> dict[str, Any]:
-        return {"stored": False, "reason": "OneField is not configured in this deployment", "project_id": project_id}
+        if not self.configured:
+            return {"stored": False, "reason": "OneField is not configured in this deployment", "project_id": project_id}
+        try:
+            payload = await self._post("/v1/memories", {"project_id": project_id, "event": event})
+            return {"stored": True, "project_id": project_id, **payload}
+        except Exception as exc:
+            log.warning("OneField write failed (non-fatal): %s", exc)
+            return {"stored": False, "reason": f"OneField unavailable: {exc}", "project_id": project_id}
+
+    async def recall(self, project_id: str, query: str, limit: int = 5) -> dict[str, Any]:
+        if not self.configured:
+            return {"available": False, "memories": [], "reason": "OneField is not configured in this deployment"}
+        try:
+            payload = await self._post("/v1/memories/search", {"project_id": project_id, "query": query, "limit": limit})
+            return {"available": True, "memories": payload.get("memories", []), **{k: v for k, v in payload.items() if k != "memories"}}
+        except Exception as exc:
+            return {"available": False, "memories": [], "reason": f"OneField unavailable: {exc}"}
 
 
-class OneForgeAdapter:
-    """Capability evaluation. Not wired into the pilot; calls are no-ops."""
+class OneForgeAdapter(_Service):
+    """Capability evaluation, used to gate releases. Enrichment: fails soft."""
 
-    configured = False
+    name = "oneforge"
+    url_field = "oneforge_url"
+    key_field = "oneforge_api_key"
 
     async def evaluate(self, capability: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return {"evaluated": False, "reason": "OneForge is not configured in this deployment", "capability": capability}
+        if not self.configured:
+            return {"evaluated": False, "reason": "OneForge is not configured in this deployment", "capability": capability}
+        try:
+            result = await self._post("/v1/evaluations", {"capability": capability, "payload": payload})
+            return {"evaluated": True, "capability": capability, **result}
+        except Exception as exc:
+            return {"evaluated": False, "capability": capability, "reason": f"OneForge unavailable: {exc}"}
 
 
-class OneClawAdapter:
-    """Actuation boundary. Deliberately inert: the pilot never executes physical actions."""
+class OneClawExecutionDenied(Exception):
+    """Raised when execution is requested but the safety conditions are not met."""
 
-    configured = False
 
-    async def execute(self, action: dict[str, Any]) -> dict[str, Any]:
-        return {"executed": False, "reason": "Automated execution is out of scope for the pilot release", "action": action}
+class OneClawAdapter(_Service):
+    """Actuation boundary.
+
+    Three conditions must all hold before anything is dispatched: the service is
+    configured, execution is explicitly enabled, and the action carries a human
+    approval. Any one of them missing means the call is refused - loudly, and with the
+    reason, because a silently skipped actuation is the worst possible outcome here.
+    """
+
+    name = "oneclaw"
+    url_field = "oneclaw_url"
+    key_field = "oneclaw_api_key"
+
+    @property
+    def execution_enabled(self) -> bool:
+        return bool(self.configured and settings.oneclaw_execution_enabled)
+
+    def refusal_reason(self, approved_by: str | None) -> str | None:
+        if not self.configured:
+            return "OneClaw is not configured in this deployment"
+        if not settings.oneclaw_execution_enabled:
+            return "Automated execution is disabled (set ONECLAW_EXECUTION_ENABLED=true to allow it)"
+        if not approved_by:
+            return "The action has not been approved by a human"
+        return None
+
+    async def execute(self, action: dict[str, Any], approved_by: str | None = None) -> dict[str, Any]:
+        refusal = self.refusal_reason(approved_by)
+        if refusal:
+            return {"executed": False, "reason": refusal, "action_id": action.get("id")}
+        try:
+            result = await self._post("/v1/actions", {"action": action, "approved_by": approved_by})
+            return {"executed": True, "action_id": action.get("id"), **result}
+        except Exception as exc:
+            # Fail closed and say so: the caller must not assume the site acted.
+            log.error("OneClaw execution failed for action %s: %s", action.get("id"), exc)
+            return {"executed": False, "action_id": action.get("id"), "reason": f"OneClaw unavailable: {exc}"}
+
+
+def all_adapters() -> list[_Service]:
+    return [OneAICoreAdapter(), OneFieldAdapter(), OneForgeAdapter(), OneClawAdapter()]

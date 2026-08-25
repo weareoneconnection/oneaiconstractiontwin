@@ -110,12 +110,27 @@ class Settings(BaseSettings):
     worker_stale_after_seconds: int = 90
     provider_health_required: bool = False
 
-    # OneAI ecosystem integrations
+    # OneAI ecosystem integrations. An empty URL means "not configured", and the
+    # corresponding adapter reports that rather than pretending to work.
     oneai_core_url: str = ""
     oneai_core_api_key: str = ""
+    #: OneAI Core is an OpenAI-compatible gateway, so the model is a routing string it
+    #: resolves ("openai:gpt-4o-mini", "anthropic:claude-...", and so on). Changing
+    #: providers is a configuration change here, not a code change.
+    oneai_core_model: str = "openai:gpt-4o-mini"
+    oneai_core_max_tokens: int = 700
+    oneai_core_temperature: float = 0.2
     onefield_url: str = ""
+    onefield_api_key: str = ""
     oneforge_url: str = ""
+    oneforge_api_key: str = ""
     oneclaw_url: str = ""
+    oneclaw_api_key: str = ""
+    integration_timeout_seconds: float = 20.0
+    #: OneClaw actuates in the physical world. A URL alone must never be enough to let
+    #: this system act on a site; execution additionally requires this explicit opt-in,
+    #: and only ever for an action a human has already approved.
+    oneclaw_execution_enabled: bool = False
 
     # Observability
     otel_enabled: bool = False

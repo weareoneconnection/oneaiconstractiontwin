@@ -12,6 +12,7 @@ Two rules hold throughout this module:
 from __future__ import annotations
 
 import random
+import re
 from typing import Any
 
 from sqlalchemy import select
@@ -33,6 +34,28 @@ core = OneAICoreAdapter()
 
 RISK_MODEL = "heuristic-schedule-v0.7.1"
 FORECAST_MODEL = "monte-carlo-activity-variance-v0.7.1"
+
+
+CITATION_RE = re.compile(r"\[([A-Za-z0-9][A-Za-z0-9._\-/]{1,63})\]")
+
+
+def verify_citations(answer: str, supplied_ids: list[str]) -> dict[str, Any]:
+    """Check that every record the answer cites was actually given to the model.
+
+    A language model asked to cite will sometimes cite something plausible that was
+    never supplied. That is the single most damaging failure mode for an evidence-first
+    product, so citations are verified rather than displayed on trust.
+    """
+    cited = list(dict.fromkeys(CITATION_RE.findall(answer or "")))
+    supplied = {value.lower() for value in supplied_ids if value}
+    verified = [value for value in cited if value.lower() in supplied]
+    unverified = [value for value in cited if value.lower() not in supplied]
+    return {
+        "cited": cited,
+        "verified": verified,
+        "unverified": unverified,
+        "supplied": list(supplied_ids),
+    }
 
 
 def _project(db: Session, ctx: RequestContext, project_id: str) -> Project:
@@ -156,8 +179,20 @@ async def ask_twin(db: Session, ctx: RequestContext, project_id: str, question: 
                 for item in sample.late_activities[:5]
             ],
             "evidence_excerpts": [hit.evidence.content for hit in hits],
+            "evidence_records": [
+                {
+                    "source_id": hit.evidence.source_id,
+                    "source_type": hit.evidence.source_type,
+                    "content": hit.evidence.content,
+                }
+                for hit in hits
+            ],
         },
     )
+
+    # A model that cites a record we never supplied has left the evidence behind. The
+    # citation is checked against what was actually retrieved rather than trusted.
+    citation_check = verify_citations(result.text, [hit.evidence.source_id for hit in hits])
 
     evidence = [
         EvidenceRef(
@@ -177,6 +212,12 @@ async def ask_twin(db: Session, ctx: RequestContext, project_id: str, question: 
     coverage = round(supported / len(claims), 4) if claims else 0.0
 
     answer = result.text
+    if citation_check["unverified"]:
+        answer += (
+            " Note: this answer referenced "
+            + ", ".join(citation_check["unverified"])
+            + ", which is not among the records retrieved for this question. Treat those references as unverified."
+        )
     if not evidence:
         # The evidence policy is enforced here, not merely stated in the docs.
         confidence = min(result.confidence, 0.4)
@@ -186,6 +227,9 @@ async def ask_twin(db: Session, ctx: RequestContext, project_id: str, question: 
         )
     else:
         confidence = round(result.confidence * (0.6 + 0.4 * coverage), 4)
+        if citation_check["unverified"]:
+            # An unverifiable citation is a grounding failure, not a rounding error.
+            confidence = round(min(confidence, 0.45), 4)
 
     EVIDENCE_COVERAGE.labels(project_id).set(coverage)
     AI_REQUESTS.labels("ask_twin", "success").inc()
@@ -226,6 +270,11 @@ async def ask_twin(db: Session, ctx: RequestContext, project_id: str, question: 
             "model_backed": bool(result.metadata.get("model_backed")),
             "retrieval": "bm25",
             "schedule_sample_size": sample.sample_size,
+            "citations": citation_check,
+            "usage": result.metadata.get("usage"),
+            "request_id": result.metadata.get("request_id"),
+            "fallback_used": result.metadata.get("fallback_used"),
+            "provider_error": result.metadata.get("provider_error"),
         },
     )
 

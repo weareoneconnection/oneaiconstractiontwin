@@ -117,7 +117,14 @@ def test_ask_twin_downgrades_to_provisional_without_matching_evidence():
         assert "provisional" in answer["answer"].lower()
 
 
-def test_ask_twin_reports_that_no_model_produced_the_answer():
+def test_ask_twin_reports_that_no_model_produced_the_answer(monkeypatch):
+    """The unconfigured path must be tested explicitly.
+
+    This assertion is about what happens with no reasoning gateway, so it clears the
+    setting rather than depending on whether the machine running the suite happens to
+    have one configured.
+    """
+    monkeypatch.setattr(settings, "oneai_core_url", "")
     with TestClient(app) as client:
         head = headers("provenance-tenant", "provenance-org")
         project_id = seed(client, "provenance-tenant", "provenance-org")["project_id"]
