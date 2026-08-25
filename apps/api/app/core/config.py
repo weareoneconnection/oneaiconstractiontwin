@@ -131,6 +131,15 @@ class Settings(BaseSettings):
         return Path(self.generated_asset_root).expanduser().resolve()
 
     @property
+    def libpq_database_url(self) -> str:
+        """The database URL in the form libpq tools accept.
+
+        `pg_dump` and `pg_restore` do not understand SQLAlchemy's `+driver` suffix, so
+        the backup path must strip it.
+        """
+        return self.database_url.replace("postgresql+psycopg://", "postgresql://", 1)
+
+    @property
     def is_production(self) -> bool:
         return self.app_env == "production"
 
@@ -153,6 +162,21 @@ class Settings(BaseSettings):
             for value in self.allowed_upload_extensions.split(",")
             if value.strip()
         }
+
+    @model_validator(mode="after")
+    def normalize_database_url(self) -> "Settings":
+        """Pin the PostgreSQL driver to psycopg 3, which is what this project ships.
+
+        Managed platforms (Railway, Render, Heroku, Fly) hand out `postgresql://` or the
+        legacy `postgres://`. SQLAlchemy maps both to psycopg2, which is not installed,
+        so the process would die at startup with `No module named 'psycopg2'`.
+        """
+        url = self.database_url
+        for prefix in ("postgresql://", "postgres://"):
+            if url.startswith(prefix):
+                self.database_url = "postgresql+psycopg://" + url[len(prefix):]
+                break
+        return self
 
     @model_validator(mode="after")
     def validate_enterprise_configuration(self) -> "Settings":

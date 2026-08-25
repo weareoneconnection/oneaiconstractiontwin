@@ -51,7 +51,7 @@ def _backup_database(destination: Path) -> Path:
 
     target = destination / "database.dump"
     subprocess.run(
-        ["pg_dump", "--format=custom", "--file", str(target), settings.database_url],
+        ["pg_dump", "--format=custom", "--file", str(target), settings.libpq_database_url],
         check=True,
     )
     return target
@@ -140,7 +140,7 @@ def restore_backup(root: Path, confirm: str) -> None:
         shutil.copy2(db_artifact, destination)
     else:
         subprocess.run(
-            ["pg_restore", "--clean", "--if-exists", "--no-owner", "--dbname", settings.database_url, str(db_artifact)],
+            ["pg_restore", "--clean", "--if-exists", "--no-owner", "--dbname", settings.libpq_database_url, str(db_artifact)],
             check=True,
         )
 

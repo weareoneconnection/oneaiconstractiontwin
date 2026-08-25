@@ -73,6 +73,16 @@ distributed-pipeline lease recovery and max-attempt failure. The suite runs agai
 isolated database and storage roots. `scripts/e2e_pilot.py` gates on the security and
 evidence-policy guarantees rather than only on HTTP status codes.
 
+## Managed-platform deployment
+
+- The API image is the repository root `Dockerfile` and builds from the repository root,
+  so a monorepo service on Railway/Render needs no build configuration.
+- `DATABASE_URL` values of the form `postgresql://` or `postgres://` are rewritten to
+  `postgresql+psycopg://`. Every managed platform hands out the former, and SQLAlchemy
+  maps it to psycopg2, which this project does not ship - the process died at startup.
+  `pg_dump`/`pg_restore` keep receiving a plain libpq URL.
+- `docs/DEPLOY_RAILWAY.md` and `.env.railway.example` describe the four-service topology.
+
 ## Upgrade
 
 `alembic` revision `20260824_0002` adds the audit chain columns. Existing audit rows are

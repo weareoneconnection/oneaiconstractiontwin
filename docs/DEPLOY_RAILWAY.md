@@ -232,5 +232,7 @@ Object storage on R2 at pilot volumes is negligible.
 | Frontend calls `127.0.0.1:8000` | `NEXT_PUBLIC_API_URL` set as a runtime variable only, not as a build argument |
 | Redirect loop | `FORCE_HTTPS=true` without `--proxy-headers` (already handled in the shipped Dockerfile) |
 | Startup error about production configuration | Expected: see the production-mode table above |
+| Container crashes with `No module named 'psycopg2'` | Fixed in v0.7.1: the app rewrites `postgresql://` to `postgresql+psycopg://`. If you see it, the deployment predates that fix |
+| Container starts then every request 400s | `TRUSTED_HOSTS` empty or missing the generated domain - it is only populated after a public domain exists |
 | Build log shows `railpack prepare` | The service is not using a Dockerfile: the API/worker need root directory `/`; the web service needs `RAILWAY_DOCKERFILE_PATH` |
 | `COPY failed: ... not found` during build | A root directory was set on the service; the Dockerfiles expect the repository root as build context |

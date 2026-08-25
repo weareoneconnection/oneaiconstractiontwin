@@ -462,3 +462,30 @@ def test_a_claim_is_only_supported_by_a_record_that_refers_to_it():
     # One generic word in common is not evidence for this activity.
     assert not _supports_activity("Roof decking Zone B released for installation", activity)
     assert not _supports_activity("", activity)
+
+
+# ------------------------------------------------------- managed-platform URLs
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("postgresql://u:p@host:5432/railway", "postgresql+psycopg://u:p@host:5432/railway"),
+        ("postgres://u:p@host:5432/railway", "postgresql+psycopg://u:p@host:5432/railway"),
+        ("postgresql+psycopg://u:p@host/db", "postgresql+psycopg://u:p@host/db"),
+        ("sqlite:///./construction_twin.db", "sqlite:///./construction_twin.db"),
+    ],
+)
+def test_managed_platform_database_urls_are_pinned_to_psycopg3(raw, expected):
+    """Railway, Render, Heroku and Fly hand out `postgresql://` or `postgres://`.
+
+    SQLAlchemy maps both to psycopg2, which this project does not ship, so an
+    un-normalised URL kills the process at startup with ModuleNotFoundError.
+    """
+    assert Settings(database_url=raw).database_url == expected
+
+
+def test_libpq_tools_get_a_url_they_understand():
+    # pg_dump/pg_restore reject SQLAlchemy's +driver suffix.
+    configured = Settings(database_url="postgresql://u:p@host:5432/railway")
+    assert configured.libpq_database_url == "postgresql://u:p@host:5432/railway"
