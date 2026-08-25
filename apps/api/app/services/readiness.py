@@ -47,9 +47,25 @@ def _storage() -> dict[str, object]:
     started = time.perf_counter()
     try:
         storage.healthcheck()
-        return _result(True, latency_ms=(time.perf_counter() - started) * 1000, detail=storage.backend)
     except Exception as exc:
         return _result(False, latency_ms=(time.perf_counter() - started) * 1000, detail=str(exc))
+
+    elapsed = (time.perf_counter() - started) * 1000
+    # Local storage writes to the container's own disk. When the asset workers run as
+    # separate containers, the worker writes tiles the API can never read, and every
+    # tile request 404s after a job reports success. Rather than pass a configuration
+    # that cannot deliver, say so.
+    if storage.backend == "local" and settings.require_asset_worker and not settings.asset_local_shared:
+        return _result(
+            False,
+            latency_ms=elapsed,
+            detail=(
+                "local storage cannot be shared with a separate asset-worker container. "
+                "Use ASSET_STORAGE_BACKEND=s3 (R2/MinIO/S3), or set ASSET_LOCAL_SHARED=true "
+                "if the API and workers really do share one filesystem."
+            ),
+        )
+    return _result(True, latency_ms=elapsed, detail=storage.backend)
 
 
 def _migrations() -> dict[str, object]:

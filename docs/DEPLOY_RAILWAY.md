@@ -21,8 +21,15 @@ Target topology: four Railway services in one project.
 
 ## 1. Object storage first
 
-Railway container filesystems are ephemeral - a redeploy discards everything written
-to disk. Create an S3-compatible bucket before deploying (Cloudflare R2 is the cheapest
+**S3-compatible storage is required, not merely recommended.** Two independent reasons:
+
+1. Railway gives each service its own filesystem, and a Railway volume attaches to a
+   single service. With `ASSET_STORAGE_BACKEND=local`, the asset worker writes tiles to
+   its own container's disk and the API serves 404 for every one of them - the job
+   reports success and the viewer stays empty. Readiness reports this configuration as
+   failing rather than letting it look healthy.
+2. Railway container filesystems are ephemeral - a redeploy discards everything written
+   to disk. Create an S3-compatible bucket before deploying (Cloudflare R2 is the cheapest
 fit; Backblaze B2 and AWS S3 work identically) and keep its endpoint, bucket, access key
 and secret at hand.
 

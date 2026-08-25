@@ -508,3 +508,36 @@ def test_empty_database_url_fails_with_an_actionable_message():
 def test_empty_redis_url_falls_back_instead_of_stopping_the_service():
     # Redis is a cache and wake-up channel, not a system of record.
     assert Settings(redis_url="").redis_url.startswith("redis://")
+
+
+def test_readiness_rejects_local_storage_when_workers_run_separately():
+    """Local storage plus a required worker means two containers, two disks.
+
+    The job completes, the manifest records object keys, and every tile request 404s.
+    Readiness must report that rather than passing a configuration that cannot deliver.
+    """
+    from app.services.readiness import _storage
+
+    original_backend = settings.asset_storage_backend
+    original_required = settings.require_asset_worker
+    original_shared = settings.asset_local_shared
+    try:
+        settings.asset_storage_backend = "local"
+        settings.require_asset_worker = True
+        settings.asset_local_shared = False
+        result = _storage()
+        assert result["ok"] is False
+        assert "ASSET_STORAGE_BACKEND=s3" in result["detail"]
+
+        # A genuinely shared filesystem (compose volume, RWX claim) is allowed.
+        settings.asset_local_shared = True
+        assert _storage()["ok"] is True
+
+        # And a single-container deployment is unaffected.
+        settings.asset_local_shared = False
+        settings.require_asset_worker = False
+        assert _storage()["ok"] is True
+    finally:
+        settings.asset_storage_backend = original_backend
+        settings.require_asset_worker = original_required
+        settings.asset_local_shared = original_shared

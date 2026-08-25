@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # Distributed asset pipeline inherited from v0.6
     asset_storage_backend: Literal["local", "s3"] = "local"
     asset_local_root: str = ""
+    # Set this only when the API and the workers genuinely share one filesystem
+    # (a compose volume, or a Kubernetes ReadWriteMany claim). On a platform where
+    # each service gets its own disk, local storage cannot work across containers.
+    asset_local_shared: bool = False
     asset_object_prefix: str = "v07"
     asset_work_root: str = ""
     asset_worker_poll_seconds: float = 1.0
