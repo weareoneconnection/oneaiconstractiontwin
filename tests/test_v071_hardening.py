@@ -634,3 +634,51 @@ def test_model_document_filter_compiles_on_every_supported_dialect(dialect_name)
     compiled = str(criterion.compile(dialect=dialects[dialect_name], compile_kwargs={"literal_binds": True}))
     assert "modelDocumentId" in compiled
     assert "doc-1" in compiled
+
+
+def test_scratch_path_does_not_depend_on_module_depth():
+    """This crashed only inside the container image.
+
+    The work root used to be derived as `Path(__file__).parents[4]`, which is the
+    repository root from apps/api/app/services, but runs off the end of the path when
+    the package is installed at /app/app. It surfaced as a 500 on the geometry endpoint
+    the first time an IFC source had to be materialised from object storage.
+    """
+    path = settings.asset_work_path
+    assert path.is_absolute()
+    assert "asset-work" in str(path)
+
+
+def test_unhandled_errors_answer_from_inside_the_middleware_stack():
+    """A 500 raised above the CORS middleware reaches a browser as a network error.
+
+    The browser then reports "cannot reach the API" for a server-side fault, which
+    sends the operator looking at DNS and CORS instead of the traceback.
+    """
+    import asyncio
+
+    from app.core.middleware import EnterpriseMiddleware
+
+    middleware = EnterpriseMiddleware(app)
+
+    class FakeURL:
+        path = "/api/v1/boom"
+        scheme = "https"
+
+        def replace(self, **_):
+            return self
+
+    class FakeRequest:
+        headers: dict[str, str] = {}
+        url = FakeURL()
+        client = type("Client", (), {"host": "10.0.0.1"})()
+        scope: dict[str, object] = {}
+        method = "GET"
+        state = type("State", (), {})()
+
+    async def exploding_call_next(_request):
+        raise RuntimeError("boom")
+
+    response = asyncio.run(middleware.dispatch(FakeRequest(), exploding_call_next))
+    assert response.status_code == 500
+    assert response.headers["X-Request-ID"]

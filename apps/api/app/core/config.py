@@ -135,6 +135,17 @@ class Settings(BaseSettings):
         return Path(self.generated_asset_root).expanduser().resolve()
 
     @property
+    def asset_work_path(self) -> Path:
+        """Scratch space for materialised source models.
+
+        Deriving this from `__file__`'s ancestors broke inside the container image,
+        where the package sits at /app/app rather than apps/api/app: the index simply
+        ran off the end of the path and raised IndexError.
+        """
+        root = Path(self.asset_work_root).expanduser() if self.asset_work_root else PROJECT_ROOT / "data" / "asset-work"
+        return root.resolve()
+
+    @property
     def database_target(self) -> str:
         """Human-readable database target with the password removed.
 

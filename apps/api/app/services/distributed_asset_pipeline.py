@@ -37,8 +37,9 @@ DEFAULT_WORK_ROOT = PROJECT_ROOT / "data" / "asset-work"
 
 
 def work_root() -> Path:
-    root = Path(settings.asset_work_root).expanduser() if settings.asset_work_root else DEFAULT_WORK_ROOT
-    root = root.resolve(); root.mkdir(parents=True, exist_ok=True)
+    # One definition of the scratch root, shared with the geometry service.
+    root = settings.asset_work_path
+    root.mkdir(parents=True, exist_ok=True)
     return root
 
 

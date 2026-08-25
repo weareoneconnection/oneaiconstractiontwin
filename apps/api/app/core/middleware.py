@@ -140,7 +140,15 @@ class EnterpriseMiddleware(BaseHTTPMiddleware):
                     log.exception("request_failed", request_id=request_id, method=request.method, path=request.url.path)
                 else:
                     log.exception("request_failed request_id=%s method=%s path=%s", request_id, request.method, request.url.path)
-                raise
+                # Starlette's own 500 is produced above the CORS middleware, so a
+                # browser sees an opaque network failure instead of the error. Answer
+                # from inside the stack: the response then carries CORS headers and a
+                # request id the operator can grep for in the logs.
+                SECURITY_EVENTS.labels("unhandled_exception").inc()
+                response = JSONResponse(
+                    status_code=500,
+                    content={"detail": "Internal server error", "request_id": request_id},
+                )
 
         elapsed = time.perf_counter() - started
         path_template = request.scope.get("route").path if request.scope.get("route") else request.url.path

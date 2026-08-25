@@ -132,8 +132,7 @@ def geometry_for_model(
     path = Path(doc.uri)
     source_key = (doc.meta or {}).get("source_object_key")
     if (not path.exists()) and source_key:
-        root = Path(settings.asset_work_root).expanduser() if settings.asset_work_root else Path(__file__).resolve().parents[4] / "data" / "asset-work"
-        cached = root / "source-cache" / f"{(doc.meta or {}).get('sha256') or doc.id}.ifc"
+        cached = settings.asset_work_path / "source-cache" / f"{(doc.meta or {}).get('sha256') or doc.id}.ifc"
         path = storage.materialize(source_key, cached)
     if path.exists() and by_guid:
         try:
