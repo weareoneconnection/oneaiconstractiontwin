@@ -1,7 +1,13 @@
-# Build context is the REPOSITORY ROOT, not apps/api:
-#   docker build -f apps/api/Dockerfile .
-# A monorepo service on Railway builds from the repo root, and a Dockerfile whose
-# COPY paths assume its own directory cannot be built there.
+# API image for OneAI Construction Twin (also runs the asset worker, with a different
+# start command). It lives at the repository root on purpose: platforms that build a
+# monorepo service auto-detect a root Dockerfile with no extra configuration, and the
+# build context is the repository root, which is what the COPY paths below assume.
+#
+#   docker build -t construction-twin-api .
+#   docker run -p 8000:8000 construction-twin-api
+#   docker run construction-twin-api python -m app.workers.asset_worker
+#
+# The web application has its own image at apps/web/Dockerfile.
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

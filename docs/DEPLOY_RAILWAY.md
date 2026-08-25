@@ -48,15 +48,15 @@ fallback would give each replica its own quota.
 
 ## 3. Service: `api`
 
-Both images build **from the repository root** (`docker build -f apps/api/Dockerfile .`).
-That means no root directory or config-as-code path needs to be set on Railway - a single
-variable selects which Dockerfile the service uses.
+The API image is the repository's root `Dockerfile`, so Railway detects it
+automatically. **No build configuration is needed at all** - no root directory, no
+config-as-code path, no `RAILWAY_DOCKERFILE_PATH`.
 
 | Setting | Value |
 |---|---|
 | Source | this repository |
 | Root directory | leave as `/` |
-| Variable `RAILWAY_DOCKERFILE_PATH` | `apps/api/Dockerfile` |
+| Build configuration | none - the root `Dockerfile` is detected automatically |
 | Public domain | generate one, e.g. `twin-api.up.railway.app` |
 
 Optional, under Settings → Deploy:
@@ -75,9 +75,9 @@ behaviour rather than a deployment failure.
 
 Variables: copy `.env.railway.example`, and set `AUTO_MIGRATE=true`.
 
-If the build log shows `railpack prepare` and a list of repository-root files, the
-`RAILWAY_DOCKERFILE_PATH` variable is missing: Railway fell back to its language
-auto-detector, which cannot interpret this repository.
+If the build log still shows `railpack prepare`, the service is not seeing the root
+`Dockerfile`: check that the service's root directory is `/` and that the deployment is
+building the commit that contains it.
 
 ## 4. Service: `asset-worker`
 
@@ -85,7 +85,7 @@ auto-detector, which cannot interpret this repository.
 |---|---|
 | Source | this repository |
 | Root directory | leave as `/` |
-| Variable `RAILWAY_DOCKERFILE_PATH` | `apps/api/Dockerfile` (same image as the API) |
+| Build configuration | none - same root `Dockerfile` as the API |
 | Custom start command | `python -m app.workers.asset_worker` |
 | Public domain | none - this service must not be exposed |
 
@@ -108,8 +108,12 @@ killed mid-partition has its lease recovered by the next one.
 | Setting | Value |
 |---|---|
 | Root directory | leave as `/` |
-| Variable `RAILWAY_DOCKERFILE_PATH` | `apps/web/Dockerfile` |
+| Variable `RAILWAY_DOCKERFILE_PATH` | `apps/web/Dockerfile` (this service must override the root Dockerfile) |
 | Public domain | generate one |
+
+The web service is the only one that needs a build variable, because the root
+`Dockerfile` builds the API. Set it under **Variables**, then trigger a redeploy -
+the value is read at build time, so an already-running build will not pick it up.
 
 **Set `NEXT_PUBLIC_*` as build arguments, not only as runtime variables.** Next inlines
 them into the client bundle at build time; a value that exists only at runtime produces
@@ -228,5 +232,5 @@ Object storage on R2 at pilot volumes is negligible.
 | Frontend calls `127.0.0.1:8000` | `NEXT_PUBLIC_API_URL` set as a runtime variable only, not as a build argument |
 | Redirect loop | `FORCE_HTTPS=true` without `--proxy-headers` (already handled in the shipped Dockerfile) |
 | Startup error about production configuration | Expected: see the production-mode table above |
-| Build log shows `railpack prepare` and lists repository-root files | `RAILWAY_DOCKERFILE_PATH` is not set on the service |
+| Build log shows `railpack prepare` | The service is not using a Dockerfile: the API/worker need root directory `/`; the web service needs `RAILWAY_DOCKERFILE_PATH` |
 | `COPY failed: ... not found` during build | A root directory was set on the service; the Dockerfiles expect the repository root as build context |

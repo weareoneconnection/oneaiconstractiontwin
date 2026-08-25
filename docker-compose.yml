@@ -41,7 +41,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: Dockerfile
     environment: &backend_env
       APP_ENV: docker
       AUTO_MIGRATE: "true"
@@ -85,7 +85,7 @@ services:
   asset-worker:
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: Dockerfile
     command: ["python", "-m", "app.workers.asset_worker"]
     environment:
       <<: *backend_env
