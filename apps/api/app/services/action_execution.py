@@ -12,7 +12,6 @@ reconcile, rather than one that looks identical to success.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -201,17 +200,19 @@ def dispatch_action(
     hub.publish(ctx.tenant_id, action.project_id, "action.dispatched",
                 {"id": action.id, "status": "dispatched"})
 
-    result = asyncio.run(
-        oneclaw.dispatch_notification(
-            action_id=action.id,
-            project_id=action.project_id,
-            approved_by=str(action.approved_by),
-            subject=subject,
-            body=body,
-            recipients=clean,
-            summary=summary,
-            attachments=attachments or [],
-        )
+    # Synchronous on purpose. This runs inside a FastAPI sync endpoint, which
+    # Starlette executes on an anyio worker thread; asyncio.run there builds an
+    # event loop with no working networking and the dispatch fails with an empty
+    # error. The sync client has no loop to misplace. See OneClawAdapter.
+    result = oneclaw.dispatch_notification_sync(
+        action_id=action.id,
+        project_id=action.project_id,
+        approved_by=str(action.approved_by),
+        subject=subject,
+        body=body,
+        recipients=clean,
+        summary=summary,
+        attachments=attachments or [],
     )
 
     # The callback may already have advanced this action while the call was in

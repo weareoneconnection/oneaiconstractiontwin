@@ -51,7 +51,7 @@ class FakeDispatch:
         self.result = result
         self.calls: list[dict[str, Any]] = []
 
-    async def __call__(self, **kwargs: Any) -> dict[str, Any]:
+    def __call__(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(kwargs)
         return self.result
 
@@ -59,7 +59,7 @@ class FakeDispatch:
 @pytest.fixture
 def dispatch(monkeypatch):
     fake = FakeDispatch({"dispatched": True, "action_id": "", "task_id": "tsk_1", "task_status": "queued"})
-    monkeypatch.setattr(action_execution.oneclaw, "dispatch_notification", fake)
+    monkeypatch.setattr(action_execution.oneclaw, "dispatch_notification_sync", fake)
     monkeypatch.setattr(OneClawAdapter, "refusal_reason", lambda self, approved_by: None)
     return fake
 
@@ -117,7 +117,7 @@ def test_invalid_recipient_is_rejected_before_anything_is_sent(dispatch):
 def test_dispatch_refusal_keeps_the_approval_and_records_the_reason(monkeypatch):
     tenant, org = "chain-t4", "chain-o4"
     fake = FakeDispatch({"dispatched": False, "reason": "OneClaw is not configured in this deployment"})
-    monkeypatch.setattr(action_execution.oneclaw, "dispatch_notification", fake)
+    monkeypatch.setattr(action_execution.oneclaw, "dispatch_notification_sync", fake)
 
     with TestClient(app) as client:
         _, action_id = seed_action(client, tenant, org)
@@ -332,7 +332,7 @@ def test_a_callback_that_lands_during_dispatch_is_not_overwritten(monkeypatch):
     with TestClient(app) as client:
         _, action_id = seed_action(client, tenant, org)
 
-        async def dispatch_and_report_inline(**kwargs: Any) -> dict[str, Any]:
+        def dispatch_and_report_inline(**kwargs: Any) -> dict[str, Any]:
             # A separate session, as the real callback request would have.
             from app.db.session import SessionLocal
             from app.core.security import RequestContext
@@ -357,7 +357,7 @@ def test_a_callback_that_lands_during_dispatch_is_not_overwritten(monkeypatch):
                 session.close()
             return {"dispatched": True, "task_id": "tsk_inline", "task_status": "success"}
 
-        monkeypatch.setattr(action_execution.oneclaw, "dispatch_notification", dispatch_and_report_inline)
+        monkeypatch.setattr(action_execution.oneclaw, "dispatch_notification_sync", dispatch_and_report_inline)
         monkeypatch.setattr(OneClawAdapter, "refusal_reason", lambda self, approved_by: None)
 
         response = client.post(
@@ -411,3 +411,68 @@ def test_reconciliation_sees_every_tenant(dispatch, monkeypatch):
         # A tenant-scoped caller still sees only its own.
         scoped = client.get("/api/v1/actions/unconfirmed", headers=headers("recon-t1", "recon-o1"))
         assert [item["id"] for item in scoped.json()["actions"]] == [stuck[0]]
+
+
+def test_sync_dispatch_survives_a_worker_thread(monkeypatch):
+    """The bug this guards against passed every mocked test and failed in production.
+
+    A FastAPI sync endpoint runs on an anyio worker thread. The dispatch used to
+    drive an async httpx client there via asyncio.run, which built an event loop
+    with no working networking and failed with an empty error — surfacing as
+    "OneClaw unavailable:" with no reason. This exercises the real sync client on
+    a real non-main thread against a local stub, with no mock in the path.
+    """
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    import app.core.config as config_module
+    from app.integrations.oneai import OneClawAdapter
+
+    received: dict[str, Any] = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            length = int(self.headers.get("content-length", 0))
+            received["body"] = self.rfile.read(length)
+            received["path"] = self.path
+            self.send_response(202)
+            self.send_header("content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(b'{"id":"tsk_stub","status":"queued"}')
+
+        def log_message(self, *args):  # keep the test quiet
+            pass
+
+    server = HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    monkeypatch.setattr(config_module.settings, "oneclaw_url", f"http://127.0.0.1:{port}")
+    monkeypatch.setattr(config_module.settings, "oneclaw_api_key", "test-token")
+    monkeypatch.setattr(config_module.settings, "oneclaw_execution_enabled", True)
+
+    adapter = OneClawAdapter()
+    result: dict[str, Any] = {}
+
+    def worker():
+        # The exact context that broke: a fresh worker thread, not the main one.
+        result.update(
+            adapter.dispatch_notification_sync(
+                action_id="thread-probe",
+                project_id="p",
+                approved_by="maqing",
+                subject="s",
+                body="b",
+                recipients=[{"kind": "email", "address": "pm@example.com", "name": "PM", "role": "pm"}],
+                summary="t",
+            )
+        )
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    thread.join(timeout=15)
+    server.shutdown()
+
+    assert not thread.is_alive(), "dispatch hung on the worker thread"
+    assert result.get("dispatched") is True, f"dispatch failed on a worker thread: {result}"
+    assert received.get("path") == "/v1/tasks/run"

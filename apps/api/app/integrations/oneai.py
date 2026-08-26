@@ -365,6 +365,29 @@ class OneClawAdapter(_Service):
             response.raise_for_status()
             return dict(response.json())
 
+    def _post_task_sync(
+        self,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """Synchronous twin of _post_task.
+
+        dispatch runs inside a FastAPI sync endpoint, which Starlette executes in
+        an anyio worker thread. Driving httpx.AsyncClient there via asyncio.run
+        creates a fresh event loop in a thread that has none of the main thread's
+        loop machinery, and the connection fails with an exception whose str is
+        empty — surfacing as the maddening "OneClaw unavailable:" with no reason.
+        A plain synchronous client has no event loop to misplace, so the request
+        behaves the same on every thread.
+        """
+        headers = self._headers()
+        headers["Idempotency-Key"] = idempotency_key
+        with httpx.Client(timeout=timeout or settings.oneclaw_dispatch_timeout_seconds) as client:
+            response = client.post(f"{self._url}/v1/tasks/run", headers=headers, json=payload)
+            response.raise_for_status()
+            return dict(response.json())
+
     async def execute(self, action: dict[str, Any], approved_by: str | None = None) -> dict[str, Any]:
         """Run a single capability. Kept for callers that need one step only."""
         refusal = self.refusal_reason(approved_by)
@@ -421,7 +444,44 @@ class OneClawAdapter(_Service):
         if refusal:
             return {"dispatched": False, "reason": refusal, "action_id": action_id}
 
-        payload = {
+        payload = self._dispatch_payload(
+            action_id=action_id,
+            project_id=project_id,
+            approved_by=approved_by,
+            subject=subject,
+            body=body,
+            recipients=recipients,
+            summary=summary,
+            attachments=attachments,
+        )
+
+        try:
+            result = await self._post_task(payload, idempotency_key=action_id)
+        except Exception as exc:
+            log.error("OneClaw dispatch failed for action %s: %s", action_id, exc)
+            return {"dispatched": False, "action_id": action_id, "reason": f"OneClaw unavailable: {self._redact(str(exc))}"}
+
+        return self._dispatch_result(action_id, result)
+
+    def _dispatch_payload(
+        self,
+        *,
+        action_id: str,
+        project_id: str,
+        approved_by: str,
+        subject: str,
+        body: str,
+        recipients: list[dict[str, Any]],
+        summary: str,
+        attachments: list[dict[str, Any]] | None,
+    ) -> dict[str, Any]:
+        """The two-step task graph: deliver, then report the outcome back.
+
+        The report is a separate step so a delivery that succeeded and a
+        write-back that failed stay distinguishable, and so the write-back can be
+        retried on its own.
+        """
+        return {
             "taskName": f"twin-action-{action_id}",
             "approvalMode": "auto",
             "metadata": {
@@ -460,12 +520,48 @@ class OneClawAdapter(_Service):
             ],
         }
 
+    def dispatch_notification_sync(
+        self,
+        *,
+        action_id: str,
+        project_id: str,
+        approved_by: str,
+        subject: str,
+        body: str,
+        recipients: list[dict[str, Any]],
+        summary: str,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Synchronous dispatch, for callers that are already on a worker thread.
+
+        The approval endpoint is one of them. See _post_task_sync for why the
+        async path fails there — briefly, asyncio.run in an anyio worker thread
+        builds a loop with no working networking and dies with an empty error.
+        """
+        refusal = self.refusal_reason(approved_by)
+        if refusal:
+            return {"dispatched": False, "reason": refusal, "action_id": action_id}
+
+        payload = self._dispatch_payload(
+            action_id=action_id,
+            project_id=project_id,
+            approved_by=approved_by,
+            subject=subject,
+            body=body,
+            recipients=recipients,
+            summary=summary,
+            attachments=attachments,
+        )
+
         try:
-            result = await self._post_task(payload, idempotency_key=action_id)
+            result = self._post_task_sync(payload, idempotency_key=action_id)
         except Exception as exc:
             log.error("OneClaw dispatch failed for action %s: %s", action_id, exc)
             return {"dispatched": False, "action_id": action_id, "reason": f"OneClaw unavailable: {self._redact(str(exc))}"}
 
+        return self._dispatch_result(action_id, result)
+
+    def _dispatch_result(self, action_id: str, result: dict[str, Any]) -> dict[str, Any]:
         task = result.get("task") if isinstance(result.get("task"), dict) else result
         return {
             "dispatched": True,
