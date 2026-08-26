@@ -18,7 +18,7 @@ import logging
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -379,7 +379,14 @@ def all_stale_dispatched_actions(db: Session) -> list[dict[str, Any]]:
     cutoff = utcnow() - timedelta(seconds=settings.oneclaw_dispatch_stale_after_seconds)
     rows = db.scalars(
         select(AgentAction)
-        .where(AgentAction.status == "dispatched", AgentAction.dispatched_at < cutoff)
+        # NULL dispatched_at is not "recent" — it is an action stuck without even
+        # a dispatch timestamp, which is more suspect, not less. A plain
+        # `dispatched_at < cutoff` drops it (NULL compares false) and hides the
+        # very thing reconciliation exists to surface, so treat NULL as stale.
+        .where(
+            AgentAction.status == "dispatched",
+            or_(AgentAction.dispatched_at < cutoff, AgentAction.dispatched_at.is_(None)),
+        )
         .order_by(AgentAction.dispatched_at)
     ).all()
     return [
@@ -485,7 +492,7 @@ def stale_dispatched_actions(db: Session, ctx: RequestContext) -> list[dict[str,
             AgentAction.tenant_id == ctx.tenant_id,
             AgentAction.organization_id == ctx.organization_id,
             AgentAction.status == "dispatched",
-            AgentAction.dispatched_at < cutoff,
+            or_(AgentAction.dispatched_at < cutoff, AgentAction.dispatched_at.is_(None)),
         ).order_by(AgentAction.dispatched_at)
     ).all()
     return [

@@ -476,3 +476,39 @@ def test_sync_dispatch_survives_a_worker_thread(monkeypatch):
     assert not thread.is_alive(), "dispatch hung on the worker thread"
     assert result.get("dispatched") is True, f"dispatch failed on a worker thread: {result}"
     assert received.get("path") == "/v1/tasks/run"
+
+
+def test_reconciliation_catches_a_dispatched_action_with_no_timestamp(dispatch, monkeypatch):
+    """A dispatched action with a NULL dispatched_at must not be invisible.
+
+    Found in production: older rows reached `dispatched` with dispatched_at unset,
+    and the reconciliation filter `dispatched_at < cutoff` dropped them because
+    NULL compares false. An action stuck without even a dispatch time is the most
+    suspect kind, not one to hide — so NULL now counts as stale.
+    """
+    tenant, org = "recon-null-t", "recon-null-o"
+    monkeypatch.setattr(settings, "oneclaw_dispatch_stale_after_seconds", 900)
+
+    with TestClient(app) as client:
+        _, action_id = seed_action(client, tenant, org)
+        client.post(
+            f"/api/v1/actions/{action_id}/approve",
+            headers=headers(tenant, org),
+            json={"recipients": [{"kind": "email", "address": "pm@example.com"}]},
+        )
+
+        # Force the exact production shape: dispatched, but no timestamp.
+        from app.db.session import SessionLocal
+        from app.domain.models import AgentAction
+
+        session = SessionLocal()
+        try:
+            row = session.get(AgentAction, action_id)
+            row.status = "dispatched"
+            row.dispatched_at = None
+            session.commit()
+        finally:
+            session.close()
+
+        listed = client.get("/api/v1/actions/unconfirmed", headers=headers(tenant, org))
+        assert action_id in [item["id"] for item in listed.json()["actions"]]
