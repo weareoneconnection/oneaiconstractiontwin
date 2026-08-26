@@ -133,7 +133,13 @@ class Settings(BaseSettings):
     oneclaw_execution_enabled: bool = False
     #: Dispatch is on the approval request's critical path only for the HTTP call
     #: itself, so it is kept short: a slow executor must not hold an approval open.
-    oneclaw_dispatch_timeout_seconds: float = 10.0
+    # Dispatch is synchronous end to end: OneClaw runs the task graph inline,
+    # which really sends the email and then calls back into this twin, all before
+    # its HTTP response returns. So this must cover a live Gmail send plus the
+    # callback round trip, not just the outbound POST. 10s was too tight for a
+    # real send and produced spurious "read operation timed out" dispatch
+    # failures for actions that were, in fact, delivered.
+    oneclaw_dispatch_timeout_seconds: float = 30.0
     #: How long an action may sit in `dispatched` before reconciliation flags it as
     #: unconfirmed. An action that was sent and never reported is a real condition
     #: an operator has to see, not a silent success.
