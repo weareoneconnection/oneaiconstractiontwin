@@ -345,17 +345,135 @@ class OneClawAdapter(_Service):
             return "The action has not been approved by a human"
         return None
 
+    async def _post_task(
+        self,
+        payload: dict[str, Any],
+        idempotency_key: str,
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
+        """POST a task graph, keyed so a repeated dispatch cannot act twice.
+
+        OneClaw stores the idempotency key and returns the original task for a
+        repeat, which is what makes it safe to retry a dispatch that failed
+        somewhere between here and there without a second notification reaching
+        the site team.
+        """
+        headers = self._headers()
+        headers["Idempotency-Key"] = idempotency_key
+        async with httpx.AsyncClient(timeout=timeout or settings.oneclaw_dispatch_timeout_seconds) as client:
+            response = await client.post(f"{self._url}/v1/tasks/run", headers=headers, json=payload)
+            response.raise_for_status()
+            return dict(response.json())
+
     async def execute(self, action: dict[str, Any], approved_by: str | None = None) -> dict[str, Any]:
+        """Run a single capability. Kept for callers that need one step only."""
         refusal = self.refusal_reason(approved_by)
         if refusal:
             return {"executed": False, "reason": refusal, "action_id": action.get("id")}
+
+        action_id = str(action.get("id") or "")
+        body = {
+            # OneClaw's contract: `action` is a capability name and `input` is its
+            # payload. Sending the whole action object here is what silently broke
+            # this integration before - it 404'd against a path that never existed.
+            "action": str(action.get("action") or action.get("capability") or ""),
+            "input": dict(action.get("input") or {}),
+            "approvalMode": "auto",
+        }
+        if not body["action"]:
+            return {"executed": False, "action_id": action_id, "reason": "The action carries no capability name"}
+
+        headers = self._headers()
+        if action_id:
+            headers["Idempotency-Key"] = action_id
         try:
-            result = await self._post("/v1/actions", {"action": action, "approved_by": approved_by})
-            return {"executed": True, "action_id": action.get("id"), **result}
+            async with httpx.AsyncClient(timeout=settings.oneclaw_dispatch_timeout_seconds) as client:
+                response = await client.post(f"{self._url}/v1/actions/execute", headers=headers, json=body)
+                response.raise_for_status()
+                result = dict(response.json())
         except Exception as exc:
             # Fail closed and say so: the caller must not assume the site acted.
-            log.error("OneClaw execution failed for action %s: %s", action.get("id"), exc)
-            return {"executed": False, "action_id": action.get("id"), "reason": f"OneClaw unavailable: {exc}"}
+            log.error("OneClaw execution failed for action %s: %s", action_id, exc)
+            return {"executed": False, "action_id": action_id, "reason": f"OneClaw unavailable: {self._redact(str(exc))}"}
+        return {"executed": True, "action_id": action_id, **result}
+
+    async def dispatch_notification(
+        self,
+        *,
+        action_id: str,
+        project_id: str,
+        approved_by: str,
+        subject: str,
+        body: str,
+        recipients: list[dict[str, Any]],
+        summary: str,
+        attachments: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        """Send an approved action out for delivery, then have it reported back.
+
+        Two steps, not one. The report is a separate step so that a delivery that
+        succeeded and a write-back that failed are distinguishable in OneClaw's
+        task graph, and so the write-back can be retried on its own. A single
+        fire-and-forget step would leave this twin unable to tell "delivered" from
+        "never happened".
+        """
+        refusal = self.refusal_reason(approved_by)
+        if refusal:
+            return {"dispatched": False, "reason": refusal, "action_id": action_id}
+
+        payload = {
+            "taskName": f"twin-action-{action_id}",
+            "approvalMode": "auto",
+            "metadata": {
+                "source": "construction-twin",
+                "actionId": action_id,
+                "projectId": project_id,
+                "idempotencyKey": action_id,
+            },
+            "steps": [
+                {
+                    "id": "notify",
+                    "action": "twin.notify.stakeholders",
+                    "input": {
+                        "actionId": action_id,
+                        "projectId": project_id,
+                        "approvedBy": approved_by,
+                        "subject": subject,
+                        "body": body,
+                        "recipients": recipients,
+                        "attachments": attachments or [],
+                    },
+                },
+                {
+                    "id": "report",
+                    "action": "twin.action.report",
+                    "dependsOn": ["notify"],
+                    "input": {
+                        "actionId": action_id,
+                        "outcome": "executed",
+                        "summary": summary,
+                        # Resolved by OneClaw from the notify step. Its worker refuses to report
+                        # an unresolved template rather than filing blank receipts as proof.
+                        "receipts": "{{notify.output.deliveries}}",
+                    },
+                },
+            ],
+        }
+
+        try:
+            result = await self._post_task(payload, idempotency_key=action_id)
+        except Exception as exc:
+            log.error("OneClaw dispatch failed for action %s: %s", action_id, exc)
+            return {"dispatched": False, "action_id": action_id, "reason": f"OneClaw unavailable: {self._redact(str(exc))}"}
+
+        task = result.get("task") if isinstance(result.get("task"), dict) else result
+        return {
+            "dispatched": True,
+            "action_id": action_id,
+            "task_id": str((task or {}).get("id") or ""),
+            "task_status": str((task or {}).get("status") or ""),
+            "idempotent": bool(result.get("idempotent")),
+        }
 
 
 def all_adapters() -> list[_Service]:

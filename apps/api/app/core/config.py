@@ -131,6 +131,13 @@ class Settings(BaseSettings):
     #: this system act on a site; execution additionally requires this explicit opt-in,
     #: and only ever for an action a human has already approved.
     oneclaw_execution_enabled: bool = False
+    #: Dispatch is on the approval request's critical path only for the HTTP call
+    #: itself, so it is kept short: a slow executor must not hold an approval open.
+    oneclaw_dispatch_timeout_seconds: float = 10.0
+    #: How long an action may sit in `dispatched` before reconciliation flags it as
+    #: unconfirmed. An action that was sent and never reported is a real condition
+    #: an operator has to see, not a silent success.
+    oneclaw_dispatch_stale_after_seconds: int = 900
 
     # Observability
     otel_enabled: bool = False

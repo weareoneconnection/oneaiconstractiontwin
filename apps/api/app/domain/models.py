@@ -166,17 +166,38 @@ class GraphRelation(Base, TenantScoped):
 
 
 class AgentAction(Base, TenantScoped):
+    """An agent's proposal and, once a human approves it, its execution record.
+
+    The status is a one-way progression:
+
+        pending_approval → approved → dispatched → executed
+                                    ↘ dispatch_failed
+                                    ↘ failed
+
+    `dispatched` is the state that matters most. It means the action left this
+    system for the executor and has not been confirmed, which is a real and
+    reportable condition — an action that was sent and never came back must be
+    visible rather than indistinguishable from one that succeeded.
+    """
+
     __tablename__ = "agent_actions"
     id: Mapped[str] = mapped_column(String(64), primary_key=True, default=uid)
     project_id: Mapped[str] = mapped_column(String(64), ForeignKey("projects.id"), index=True)
     agent: Mapped[str] = mapped_column(String(100))
     action_type: Mapped[str] = mapped_column(String(100))
     payload: Mapped[dict] = mapped_column(JSON, default=dict)
-    status: Mapped[str] = mapped_column(String(32), default="pending_approval")
+    status: Mapped[str] = mapped_column(String(32), default="pending_approval", index=True)
     requested_by: Mapped[str] = mapped_column(String(64), default="agent")
     approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     approved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Execution, performed by OneClaw. This twin never writes these itself.
+    executor: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    executor_task_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    dispatched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    execution_result: Mapped[dict] = mapped_column(JSON, default=dict)
+    execution_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class AuditLog(Base):

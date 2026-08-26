@@ -46,6 +46,11 @@ ROLE_PERMISSIONS = {
     "contractor": {"project:read", "twin:read", "twin:write", "ai:run", "comment:write"},
     "viewer": {"project:read", "twin:read"},
     "ai_agent": {"project:read", "twin:read", "ai:run", "action:propose"},
+    # The executor's credential. It reports what it did and files the proof, and
+    # that is all: it cannot approve, cannot propose, and cannot read the audit
+    # trail. A compromised executor key must not be able to manufacture the
+    # approval it would need to act.
+    "service_executor": {"project:read", "action:execute", "evidence:write"},
 }
 
 

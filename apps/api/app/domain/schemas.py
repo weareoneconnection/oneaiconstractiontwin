@@ -97,7 +97,86 @@ class AgentActionOut(BaseModel):
     payload: dict[str, Any]
     status: str
     created_at: datetime
+    approved_by: str | None = None
+    executor: str | None = None
+    executor_task_id: str | None = None
+    dispatched_at: datetime | None = None
+    executed_at: datetime | None = None
+    execution_error: str | None = None
     model_config = {"from_attributes": True}
+
+
+class ActionRecipient(BaseModel):
+    """One resolved destination.
+
+    The twin resolves people to addresses before anything leaves it, so the
+    executor never needs the project organisation chart.
+    """
+
+    kind: str = "email"
+    address: str = ""
+    email: str | None = None
+    chatId: str | None = None
+    name: str | None = None
+    role: str | None = None
+
+
+class ActionApproveRequest(BaseModel):
+    """Approval, and optionally the distribution list to act on it with.
+
+    Omitting recipients approves without dispatching: an approval is a decision,
+    and it stays valid whether or not anything was sent.
+    """
+
+    recipients: list[ActionRecipient] = Field(default_factory=list)
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+    dispatch: bool = True
+
+
+class ActionDispatchRequest(BaseModel):
+    recipients: list[ActionRecipient] = Field(default_factory=list)
+    attachments: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ExecutionEvidenceIn(BaseModel):
+    source_type: str = "oneclaw_execution"
+    source_id: str | None = None
+    content: str
+    captured_at: datetime | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ExecutionReportIn(BaseModel):
+    """What the executor sends back once it has acted, or failed to.
+
+    `dry_run` is a first-class outcome and never advances the action: a rehearsed
+    chain must not leave a record claiming the site was notified.
+    """
+
+    outcome: str
+    oneclaw_task_id: str | None = None
+    summary: str = ""
+    receipts: Any = None
+    error: str | None = None
+    evidence: list[ExecutionEvidenceIn] = Field(default_factory=list)
+
+
+class EvidenceIngestRequest(BaseModel):
+    records: list[ExecutionEvidenceIn] = Field(default_factory=list)
+
+
+class EvidenceIngestOut(BaseModel):
+    project_id: str
+    created: int
+    submitted: int
+
+
+class ExecutionReportOut(BaseModel):
+    id: str
+    status: str
+    outcome: str
+    evidence_created: int
+    executor_task_id: str | None = None
 
 
 class AssetBuildJobRequest(BaseModel):
