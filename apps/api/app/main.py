@@ -20,6 +20,7 @@ from app.api.routes.demo import router as demo_router
 from app.api.routes.enterprise import router as enterprise_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.realtime import router as realtime_router
+from app.api.routes.public_demo import router as public_demo_router
 from app.api.routes.read import router as read_router
 from app.api.routes.v03 import router as v03_router
 from app.api.routes.v04 import router as v04_router
@@ -96,6 +97,8 @@ app.include_router(v06_router)
 app.include_router(enterprise_router)
 app.include_router(collaboration_router)
 app.include_router(realtime_router)
+# Mounted last, and only serves anything when PUBLIC_DEMO_ENABLED is set.
+app.include_router(public_demo_router)
 
 ASSET_ROOT.mkdir(parents=True, exist_ok=True)
 # Generated assets are NEVER served through an unauthenticated static mount: every

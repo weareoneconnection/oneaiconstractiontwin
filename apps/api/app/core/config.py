@@ -67,6 +67,26 @@ class Settings(BaseSettings):
     api_key_records_json: str = "{}"
 
     # Rate limiting
+    # Public marketing demo. Off unless a deployment explicitly turns it on:
+    # a customer installation must never expose an unauthenticated read surface
+    # because a default flipped the wrong way.
+    public_demo_enabled: bool = False
+    public_demo_tenant_id: str = "demo-tenant"
+    public_demo_organization_id: str = "demo-org"
+    public_demo_project_id: str = ""
+    public_demo_rate_limit_requests: int = 30
+    public_demo_rate_limit_window_seconds: int = 60
+    public_demo_ask_rate_limit_requests: int = 6
+    # Only these questions reach the reasoner. An open text box on an
+    # unauthenticated endpoint is an invitation to run up a model bill and to
+    # try prompt injection against a system that reads customer records.
+    public_demo_questions: str = (
+        "Why is Roof Zone B delayed?|"
+        "What is the current schedule risk?|"
+        "What should the team do next?|"
+        "Will the M&E package be affected?"
+    )
+
     rate_limit_enabled: bool = True
     rate_limit_requests: int = 240
     rate_limit_window_seconds: int = 60
@@ -221,6 +241,10 @@ class Settings(BaseSettings):
         return [value.strip() for value in self.cors_origins.split(",") if value.strip()]
 
     @property
+    def public_demo_question_list(self) -> list[str]:
+        return [value.strip() for value in self.public_demo_questions.split("|") if value.strip()]
+
+    @property
     def trusted_host_list(self) -> list[str]:
         return [value.strip() for value in self.trusted_hosts.split(",") if value.strip()]
 
@@ -269,6 +293,27 @@ class Settings(BaseSettings):
         # empty value falls back to the default instead of stopping the service.
         if not (self.redis_url or "").strip():
             self.redis_url = type(self).model_fields["redis_url"].default
+        return self
+
+    @model_validator(mode="after")
+    def validate_public_demo(self) -> "Settings":
+        """The public demo must name the one project it is allowed to serve.
+
+        Without a pinned project id the router has nothing to compare an
+        incoming id against, and "public read-only demo" quietly becomes
+        "public read access to whatever is in the database".
+        """
+        if not self.public_demo_enabled:
+            return self
+        if not (self.public_demo_project_id or "").strip():
+            raise ValueError(
+                "PUBLIC_DEMO_ENABLED requires PUBLIC_DEMO_PROJECT_ID: the demo serves "
+                "exactly one seeded project and refuses every other id."
+            )
+        if not self.public_demo_question_list:
+            raise ValueError(
+                "PUBLIC_DEMO_ENABLED requires a non-empty PUBLIC_DEMO_QUESTIONS allowlist."
+            )
         return self
 
     @model_validator(mode="after")

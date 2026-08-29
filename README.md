@@ -201,6 +201,7 @@ together with the sample they were computed from.
 - `docs/API_REFERENCE.md` - primary API groups
 - `docs/E2E_TEST_PLAN.md` - end-to-end release gate
 - `docs/KNOWN_LIMITATIONS.md` - explicit product boundaries
+- `docs/PUBLIC_DEMO.md` - the optional unauthenticated read-only demo surface
 - `RELEASE_NOTES_V071.md` - the v0.7.1 hardening pass
 - `TEST_REPORT_V07.md` - what was actually validated, and what was not
 

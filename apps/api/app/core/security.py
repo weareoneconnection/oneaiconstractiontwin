@@ -45,6 +45,11 @@ ROLE_PERMISSIONS = {
     "safety": {"project:read", "twin:read", "twin:write", "ai:run", "audit:read", "comment:write"},
     "contractor": {"project:read", "twin:read", "twin:write", "ai:run", "comment:write"},
     "viewer": {"project:read", "twin:read"},
+    # The public marketing demo. Read the seeded demo project and ask it a
+    # question from a fixed allowlist — nothing else. It cannot write, cannot
+    # approve, cannot propose an action and cannot read the audit trail, so a
+    # bug in the public router cannot become a data-modifying one.
+    "public_demo": {"project:read", "twin:read", "ai:run"},
     "ai_agent": {"project:read", "twin:read", "ai:run", "action:propose"},
     # The executor's credential. It reports what it did and files the proof, and
     # that is all: it cannot approve, cannot propose, and cannot read the audit
