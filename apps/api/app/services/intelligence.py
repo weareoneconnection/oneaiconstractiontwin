@@ -160,7 +160,9 @@ def _build_claims(
     return claims
 
 
-async def ask_twin(db: Session, ctx: RequestContext, project_id: str, question: str) -> AskResponse:
+async def ask_twin(
+    db: Session, ctx: RequestContext, project_id: str, question: str, locale: str = "en"
+) -> AskResponse:
     project = _project(db, ctx, project_id)
     sample = _sample(db, ctx, project_id)
 
@@ -170,6 +172,7 @@ async def ask_twin(db: Session, ctx: RequestContext, project_id: str, question: 
     result = await core.reason(
         question,
         {
+            "answer_language": locale,
             "project": project.name,
             "actual": project.actual_progress,
             "planned": project.planned_progress,

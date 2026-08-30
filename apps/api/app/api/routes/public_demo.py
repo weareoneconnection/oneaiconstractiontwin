@@ -224,6 +224,9 @@ def forecast(db: Session = Depends(get_db), ctx: RequestContext = Depends(demo_g
 
 class PublicAskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=200)
+    # Which language the answer should be written in. The question itself stays
+    # on the English allowlist so the key is stable across locales.
+    locale: str = Field(default="en", pattern="^(en|zh)$")
 
 
 @router.post("/ask")
@@ -253,4 +256,4 @@ async def ask(
         )
 
     _project_or_404(db, ctx)
-    return await intelligence.ask_twin(db, ctx, _demo_project_id(), question)
+    return await intelligence.ask_twin(db, ctx, _demo_project_id(), question, locale=payload.locale)

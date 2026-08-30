@@ -172,3 +172,56 @@ def test_the_public_role_cannot_write_or_approve():
         "user:manage",
     ):
         assert denied not in granted
+
+
+# ------------------------------------------------------------------ language
+
+
+def test_ask_defaults_to_english(demo_on):
+    """No locale sent means English, which is what every existing caller gets."""
+    from app.integrations.oneai import _build_messages
+
+    messages = _build_messages("Why is Roof Zone B delayed?", {"answer_language": "en"})
+    assert "Answer in English" in messages[0]["content"]
+
+
+def test_ask_instructs_the_model_to_answer_in_chinese():
+    from app.integrations.oneai import _build_messages
+
+    messages = _build_messages("Why is Roof Zone B delayed?", {"answer_language": "zh"})
+    system = messages[0]["content"]
+    assert "Answer in Simplified Chinese" in system
+    # Record identifiers are names, not prose: translating [DR-241] would break
+    # the citation check that runs against the retrieved record ids.
+    assert "exactly as written" in system
+
+
+def test_an_unknown_locale_adds_no_instruction():
+    from app.integrations.oneai import _build_messages
+
+    system = _build_messages("q", {"answer_language": "fr"})[0]["content"]
+    assert "Answer in" not in system
+
+    system = _build_messages("q", {})[0]["content"]
+    assert "Answer in" not in system
+
+
+def test_ask_rejects_an_unsupported_locale(demo_on):
+    client, _ = demo_on
+    allowed = client.get("/api/v1/public/demo/meta").json()["allowed_questions"]
+
+    response = client.post(
+        "/api/v1/public/demo/ask", json={"question": allowed[0], "locale": "fr"}
+    )
+    assert response.status_code == 422
+
+
+def test_ask_accepts_a_supported_locale(demo_on):
+    client, _ = demo_on
+    allowed = client.get("/api/v1/public/demo/meta").json()["allowed_questions"]
+
+    response = client.post(
+        "/api/v1/public/demo/ask", json={"question": allowed[0], "locale": "zh"}
+    )
+    assert response.status_code == 200
+    assert "answer" in response.json()

@@ -178,6 +178,9 @@ You are answering for a contractual, safety-relevant context. An answer that is 
 about what is unknown is more valuable than one that sounds complete."""
 
 
+ANSWER_LANGUAGES = {"en": "English", "zh": "Simplified Chinese"}
+
+
 def _build_messages(question: str, context: dict[str, Any]) -> list[dict[str, str]]:
     """Compose an evidence-grounded prompt.
 
@@ -207,7 +210,19 @@ def _build_messages(question: str, context: dict[str, Any]) -> list[dict[str, st
         lines.append("No activity is recorded as behind plan.")
 
     lines += ["", "QUESTION", "", question]
-    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": "\n".join(lines)}]
+
+    system = SYSTEM_PROMPT
+    language = ANSWER_LANGUAGES.get(str(context.get("answer_language") or "").lower())
+    if language:
+        # Appended rather than baked into SYSTEM_PROMPT so the evidence rules stay
+        # the first thing the model reads. Record identifiers are names, not prose:
+        # translating [DR-241] would break the citation check downstream.
+        system += (
+            f"\n\nAnswer in {language}. Keep record identifiers such as [DR-241] "
+            "exactly as written, in Latin script."
+        )
+
+    return [{"role": "system", "content": system}, {"role": "user", "content": "\n".join(lines)}]
 
 
 class OneAICoreAdapter(_Service):
