@@ -218,3 +218,64 @@ export async function logout() {
   }
   window.location.assign("/login");
 }
+
+/**
+ * Sign in by pasting a token the operator minted themselves.
+ *
+ * When auth_mode is jwt there is no browser flow: the API verifies bearer tokens signed
+ * with JWT_SECRET, and only an operator holding that secret can produce one. That is the
+ * whole authorisation check - this function adds no trust of its own. It refuses a token
+ * the API will not accept, so a bad paste fails here rather than on the first dashboard
+ * request, and it never transmits the token anywhere except to the API itself.
+ *
+ * This is a pilot path. A deployment serving people who do not hold JWT_SECRET needs an
+ * identity provider; see docs/AUTH_OIDC.md.
+ */
+export async function signInWithToken(rawToken) {
+  const token = String(rawToken || "").trim().replace(/^Bearer\s+/i, "");
+  if (!token) throw new Error("Paste an access token to continue.");
+  if (token.split(".").length !== 3) {
+    throw new Error("That does not look like a JWT. A token has three dot-separated parts.");
+  }
+
+  let claims;
+  try {
+    claims = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+  } catch {
+    throw new Error("The token payload could not be read. Copy the whole token, with no line breaks.");
+  }
+  const expiresAt = claims.exp ? claims.exp * 1000 : 0;
+  if (expiresAt && expiresAt <= Date.now()) {
+    throw new Error("That token has already expired. Mint a fresh one.");
+  }
+
+  // The API is the authority on whether the signature and claims are good.
+  let response;
+  try {
+    response = await fetch(`${API}/api/v1/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: "no-store",
+    });
+  } catch (error) {
+    throw new Error(`The API could not be reached: ${error.message}`);
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("The API rejected that token. Check it was signed with this deployment's JWT_SECRET.");
+  }
+  if (!response.ok) {
+    throw new Error(`The API returned ${response.status} while checking the token.`);
+  }
+  const identity = await response.json();
+
+  const s = store();
+  if (s) {
+    s.setItem(TOKEN_KEY, token);
+    s.setItem(EXPIRY_KEY, String(expiresAt));
+  }
+  return identity;
+}
+
+/** Whether this deployment accepts a pasted bearer token. */
+export function acceptsPastedToken(config) {
+  return Boolean(config) && ["jwt", "hybrid"].includes(config.auth_mode);
+}

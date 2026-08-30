@@ -150,3 +150,52 @@ Nothing in the API is Keycloak-specific; it uses OIDC discovery and JWKS.
 a cross-site scripting flaw would expose the access token. The hardened alternative is a
 backend-for-frontend that holds refresh tokens in `httpOnly` cookies and proxies API
 calls. That is a larger architectural change and is not part of this release.
+
+---
+
+# Signed-token sign-in (`auth_mode=jwt`)
+
+A deployment can run with `AUTH_MODE=jwt` and no identity provider. The API then
+verifies bearer tokens signed with `JWT_SECRET` — there is no `/authorize` to redirect
+to, so the browser cannot obtain a token by itself. `/login` handles this by asking for
+one directly: paste a token, and it is checked against `/api/v1/auth/me` before the tab
+keeps it.
+
+**This is a pilot path, not a product.** Signing in means holding the deployment's
+signing secret, so it works for operators and for nobody else. Anything with real users
+needs OIDC, configured as described above.
+
+## Minting a token
+
+```bash
+JWT_SECRET='<the deployment secret>' \
+  python3 scripts/mint_token.py --role platform_admin --minutes 60
+```
+
+The script runs entirely offline: it signs the claims locally and contacts nothing, which
+is why it works against a production API that exposes no token endpoint. `--issuer` and
+`--audience` default to the API's own defaults; override them if the deployment sets
+`JWT_ISSUER` or `JWT_AUDIENCE`, or every token will be rejected as `Invalid audience`.
+
+Print it, paste it into the sign-in box, done. The token lives in `sessionStorage` for
+that tab only, and is gone when the tab closes or `exp` passes.
+
+## What this does not weaken
+
+| Property | Why it still holds |
+|---|---|
+| The API's trust decision is unchanged | `/login` verifies nothing itself; it presents the token to `/auth/me` and believes the answer |
+| A token cannot be forged in the browser | Signing needs `JWT_SECRET`, which the web app never receives |
+| No anonymous access | `ALLOW_DEV_HEADER_AUTH` stays `false`; an unauthenticated request is still 401 |
+| A stolen token expires | `--minutes` bounds it; keep it short |
+
+That last row is the real cost of this path: a token is a bearer credential, so anyone
+who reads it over your shoulder is signed in until it expires. Mint short, and do not
+paste tokens into chat, tickets or screenshots.
+
+## Why the escape hatch is not `/auth/dev-token`
+
+`POST /api/v1/auth/dev-token` returns 404 whenever `ALLOW_DEV_HEADER_AUTH` is false or
+the environment is production — deliberately, because a deployment that will hand a
+`platform_admin` token to any anonymous caller is not secured. Re-enabling it to restore
+sign-in would reopen exactly that hole. Mint locally instead.

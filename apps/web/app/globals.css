@@ -38,6 +38,10 @@
 .auth-button{display:block;width:100%;box-sizing:border-box;text-align:center;margin-top:10px}
 .auth-card .result{display:flex;flex-direction:column;gap:6px;line-height:1.5}
 .auth-meta{word-break:break-all}
+.auth-token-input{width:100%;box-sizing:border-box;margin-top:6px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:rgba(4,11,19,.7);color:var(--text);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.5;resize:vertical;word-break:break-all}
+.auth-token-input:focus{outline:none;border-color:var(--cyan)}
+.auth-card form{display:flex;flex-direction:column;gap:4px}
+.auth-card form .provenance{margin-top:10px;line-height:1.6}
 .status-cluster{display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end}
 .identity-chip{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid rgba(122,162,199,.25);border-radius:10px;background:rgba(11,26,43,.6)}
 .identity-chip b{display:block;font-size:12px}
