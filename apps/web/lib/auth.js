@@ -259,11 +259,21 @@ export async function signInWithToken(rawToken) {
   } catch (error) {
     throw new Error(`The API could not be reached: ${error.message}`);
   }
-  if (response.status === 401 || response.status === 403) {
-    throw new Error("The API rejected that token. Check it was signed with this deployment's JWT_SECRET.");
-  }
   if (!response.ok) {
-    throw new Error(`The API returned ${response.status} while checking the token.`);
+    // The API's own reason is the whole diagnostic value here: a bad signature, a
+    // mismatched audience and an unknown role are three different fixes, and
+    // collapsing them into one message sends the operator hunting the wrong one.
+    let detail = "";
+    try {
+      const body = await response.json();
+      detail = typeof body?.detail === "string" ? body.detail : "";
+    } catch {
+      /* a non-JSON error body tells us nothing; the status still does */
+    }
+    if (response.status === 401 || response.status === 403) {
+      throw new Error(detail || "The API rejected that token, without saying why.");
+    }
+    throw new Error(`The API returned ${response.status} while checking the token.${detail ? ` ${detail}` : ""}`);
   }
   const identity = await response.json();
 
