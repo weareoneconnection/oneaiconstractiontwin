@@ -1,0 +1,15 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "DOCKERFILE",
+    "dockerfilePath": "integrations/keycloak/Dockerfile"
+  },
+  "deploy": {
+    "startCommand": "/opt/keycloak/entrypoint.sh --optimized --import-realm",
+    "healthcheckPath": "/realms/oneai",
+    "healthcheckTimeout": 300,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 5,
+    "numReplicas": 1
+  }
+}

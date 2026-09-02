@@ -40,6 +40,13 @@ access by accident.
 
 ## Keycloak on Railway
 
+> A packaged, verified deployment lives in [`integrations/keycloak/`](../integrations/keycloak/):
+> a Dockerfile with the realm baked in, a Railway config, and a README. The realm file
+> already contains the audience mapper, the tenant/organization attribute mappers and
+> realm roles matching this system's RBAC names — the three things that are easy to miss
+> when clicking through the admin console, and that produce silent failures when missed.
+> The steps below describe the same setup done by hand.
+
 ### 1. Deploy Keycloak
 
 Add a service from the image `quay.io/keycloak/keycloak:26.0` with:
@@ -126,6 +133,30 @@ ALLOW_DEV_HEADER_AUTH=false
 Production also enforces `FORCE_HTTPS=true`, `DEMO_ENDPOINTS_ENABLED=false`, a real
 `JWT_SECRET`, non-wildcard CORS and real object-store credentials. The process refuses
 to start otherwise - see `docs/DEPLOY_RAILWAY.md`.
+
+## Signing in before an identity provider exists
+
+A deployment running `AUTH_MODE=jwt` with no identity provider has no self-service login:
+the sign-in page asks for a token, and `POST /api/v1/auth/dev-token` is disabled whenever
+`ALLOW_DEV_HEADER_AUTH=false`. Tokens are therefore minted offline with the deployment's
+own secret:
+
+```bash
+JWT_SECRET='<the deployment's JWT_SECRET>' python apps/api/scripts/issue_token.py \
+  --user maqing --tenant demo-tenant --organization demo-org \
+  --role platform_admin --minutes 120 \
+  --verify https://<api-domain>
+```
+
+`--verify` calls `/auth/me` on that deployment before you paste anything, so a mismatched
+secret is caught here rather than at the login screen. The script refuses to sign with the
+built-in development secret, because such a token is rejected by every real deployment.
+
+On Railway the secret is the `JWT_SECRET` variable on the `api` service. Treat the
+resulting token as a bearer credential: anyone holding it has that role until it expires,
+so keep the lifetime short and issue the narrowest role that does the job.
+
+This is a stopgap, not a login system. It is what the deployment has until step 5 below.
 
 ## Other providers
 

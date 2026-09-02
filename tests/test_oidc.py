@@ -219,3 +219,54 @@ def test_production_requires_a_client_id_for_the_browser_flow():
 
     configured = Settings(**base, oidc_client_id="construction-twin-web")
     assert configured.is_production
+
+
+def test_the_token_issuing_script_refuses_the_development_secret(monkeypatch, capsys):
+    """The sign-in page asks for a token; this is the only thing that makes one.
+
+    Signing with the built-in default produces a token no real deployment accepts, so the
+    script stops and says which value to supply instead of handing over a token that will
+    be rejected at the login screen.
+    """
+    import importlib
+
+    from app.core.config import settings as live
+
+    monkeypatch.setattr(live, "jwt_secret", "development-only-change-me-32-chars!!")
+    monkeypatch.setattr(sys, "argv", ["issue_token.py"])
+    module = importlib.import_module("scripts.issue_token")
+
+    assert module.main() == 2
+    captured = capsys.readouterr()
+    assert "development secret" in captured.err
+    assert "JWT_SECRET" in captured.err
+
+
+def test_an_issued_token_is_accepted_by_the_api():
+    """The credential the script produces must actually sign in."""
+    import importlib
+
+    from app.core.config import settings as live
+
+    module = importlib.import_module("scripts.issue_token")
+    token = module.issue_local_token(
+        user_id="script-user",
+        tenant_id="script-tenant",
+        organization_id="script-org",
+        role="planner",
+        email=None,
+        expires_minutes=15,
+    )
+    with TestClient(app) as client:
+        # jwt mode is what a deployment without an identity provider runs.
+        original = live.auth_mode
+        live.auth_mode = "jwt"
+        try:
+            response = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {token}"})
+        finally:
+            live.auth_mode = original
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["user_id"] == "script-user"
+    assert body["role"] == "planner"
+    assert body["tenant_id"] == "script-tenant"

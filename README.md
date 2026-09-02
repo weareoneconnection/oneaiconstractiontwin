@@ -205,6 +205,7 @@ together with the sample they were computed from.
 - `docs/DEPLOY_RAILWAY.md` - hosted deployment on Railway (api, asset-worker, web, Postgres, Redis, S3)
 - `docs/SECURITY.md` - authentication, authorization and production controls
 - `docs/AUTH_OIDC.md` - browser sign-in, Keycloak setup and the switch to production mode
+- `integrations/keycloak/` - a packaged identity provider with the realm pre-configured
 - `docs/BACKUP_RESTORE.md` - backup and restore operations
 - `docs/PILOT_RUNBOOK.md` - first enterprise pilot workflow
 - `docs/DATA_MODEL.md` - Project World Model and enterprise records

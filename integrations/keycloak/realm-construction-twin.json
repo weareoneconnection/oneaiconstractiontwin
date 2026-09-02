@@ -1,0 +1,130 @@
+{
+  "realm": "oneai",
+  "enabled": true,
+  "displayName": "OneAI Construction Twin",
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 3600,
+  "ssoSessionMaxLifespan": 36000,
+  "roles": {
+    "realm": [
+      { "name": "platform_admin", "description": "Full platform access, including tenant administration" },
+      { "name": "organization_admin", "description": "Administers one organization" },
+      { "name": "project_director", "description": "Approves actions across projects" },
+      { "name": "project_manager", "description": "Runs a project and approves agent actions" },
+      { "name": "planner", "description": "Schedule and model work; may run AI, cannot approve actions" },
+      { "name": "qa_qc", "description": "Quality records and inspections" },
+      { "name": "safety", "description": "HSE records" },
+      { "name": "contractor", "description": "Subcontractor: reads the twin, files evidence" },
+      { "name": "viewer", "description": "Read-only" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "construction-twin-web",
+      "name": "Construction Twin web application",
+      "description": "Browser client. Public by necessity: a single-page application cannot hold a secret, so it uses Authorization Code with PKCE.",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:3000/auth/callback",
+        "http://localhost:3002/auth/callback",
+        "https://REPLACE-WEB-DOMAIN/auth/callback"
+      ],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:3002",
+        "https://REPLACE-WEB-DOMAIN"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://localhost:3000##http://localhost:3002##https://REPLACE-WEB-DOMAIN"
+      },
+      "fullScopeAllowed": true,
+      "protocolMappers": [
+        {
+          "name": "construction-twin-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "construction-twin-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "tenant_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "tenant_id",
+            "claim.name": "tenant_id",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        },
+        {
+          "name": "organization_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "user.attribute": "organization_id",
+            "claim.name": "organization_id",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "true",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "pilot.admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "pilot.admin@example.com",
+      "firstName": "Pilot",
+      "lastName": "Administrator",
+      "attributes": {
+        "tenant_id": ["demo-tenant"],
+        "organization_id": ["demo-org"]
+      },
+      "credentials": [
+        { "type": "password", "value": "CHANGE-ME-ON-FIRST-LOGIN", "temporary": true }
+      ],
+      "realmRoles": ["platform_admin"]
+    },
+    {
+      "username": "pilot.planner",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "pilot.planner@example.com",
+      "firstName": "Pilot",
+      "lastName": "Planner",
+      "attributes": {
+        "tenant_id": ["demo-tenant"],
+        "organization_id": ["demo-org"]
+      },
+      "credentials": [
+        { "type": "password", "value": "CHANGE-ME-ON-FIRST-LOGIN", "temporary": true }
+      ],
+      "realmRoles": ["planner"]
+    }
+  ]
+}
