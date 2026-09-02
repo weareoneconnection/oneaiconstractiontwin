@@ -1,39 +1,179 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { api } from "../lib/api";
+import { fitDistance, mergeExact, mergeProxies, splitMeshes } from "../lib/ifcMesh";
 
-export default function TwinViewer({ entity }) {
+// This viewer used to draw a hardcoded steel frame and take the entity only to print a
+// name over it, while its heading claimed to show the imported model. Someone importing
+// their own building saw a fictional one and had no way to tell. It now renders the
+// geometry the API actually returns, and draws proxy boxes in a different colour so an
+// approximation never passes for the real element.
+
+const EXACT_COLOR = 0x36b8e7;
+const PROXY_COLOR = 0xffa43b;
+
+export default function TwinViewer({ projectId, model }) {
   const host = useRef(null);
+  const [state, setState] = useState({ status: "idle" });
+
   useEffect(() => {
+    if (!projectId || !model?.id) { setState({ status: "idle" }); return undefined; }
+    let cancelled = false;
     let cleanup = () => {};
+    setState({ status: "loading" });
+
     (async () => {
+      let payload;
+      try {
+        payload = await api(`/api/v1/projects/${projectId}/bim/models/${model.id}/geometry`);
+      } catch (error) {
+        if (!cancelled) setState({ status: "error", message: error.message });
+        return;
+      }
+      if (cancelled || !host.current) return;
+
       const THREE = await import("three");
-      if (!host.current) return;
+      if (cancelled || !host.current) return;
+
+      const { exact: exactMeshes, proxy: proxyMeshes, triangles } = splitMeshes(payload.meshes || []);
+
       host.current.innerHTML = "";
-      const w = host.current.clientWidth || 800, h = host.current.clientHeight || 520;
-      const scene = new THREE.Scene(); scene.background = new THREE.Color(0x06111d);
-      scene.fog = new THREE.Fog(0x06111d, 18, 48);
-      const camera = new THREE.PerspectiveCamera(42,w/h,.1,100); camera.position.set(11,8,14); camera.lookAt(0,1.8,0);
-      const renderer = new THREE.WebGLRenderer({antialias:true}); renderer.setSize(w,h); renderer.setPixelRatio(Math.min(window.devicePixelRatio,2)); host.current.appendChild(renderer.domElement);
-      scene.add(new THREE.HemisphereLight(0x99ddff,0x112233,1.5));
-      const key = new THREE.DirectionalLight(0xffffff,2.2); key.position.set(8,12,6); scene.add(key);
-      const grid = new THREE.GridHelper(28,28,0x27527b,0x16324e); scene.add(grid);
-      const steel = new THREE.MeshStandardMaterial({color:0x36b8e7,metalness:.65,roughness:.35});
-      const dim = new THREE.MeshStandardMaterial({color:0x315674,metalness:.45,roughness:.55});
-      const hot = new THREE.MeshStandardMaterial({color:0xffa43b,emissive:0x512400,metalness:.5,roughness:.32});
-      const addBeam=(x,y,z,sx,sy,sz,mat=steel)=>{const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),mat);m.position.set(x,y,z);scene.add(m);return m};
-      for(let x=-5;x<=5;x+=2.5){addBeam(x,2.2,-3,.18,4.4,.18,dim);addBeam(x,2.2,3,.18,4.4,.18,dim);addBeam(x,4.4,0,.18,.18,6.2,steel)}
-      for(let z=-3;z<=3;z+=2){addBeam(0,4.4,z,10.2,.18,.18,steel)}
-      const selected=addBeam(0,4.15,1,2.35,.34,.34,hot); selected.rotation.z=.025;
-      const slab=new THREE.Mesh(new THREE.BoxGeometry(10.5,.12,6.5),new THREE.MeshStandardMaterial({color:0x10283a,transparent:true,opacity:.55,roughness:.85})); slab.position.y=.06;scene.add(slab);
-      const group=new THREE.Group();scene.add(group);
-      let mx=0,my=0,drag=false,lastX=0,lastY=0;
-      const down=e=>{drag=true;lastX=e.clientX;lastY=e.clientY}; const up=()=>drag=false; const move=e=>{if(!drag)return;mx+=(e.clientX-lastX)*.006;my+=(e.clientY-lastY)*.004;lastX=e.clientX;lastY=e.clientY;camera.position.x=11*Math.cos(mx)+14*Math.sin(mx);camera.position.z=14*Math.cos(mx)-11*Math.sin(mx);camera.position.y=Math.max(4,8+my*6);camera.lookAt(0,2,0)};
-      renderer.domElement.addEventListener("pointerdown",down); window.addEventListener("pointerup",up); window.addEventListener("pointermove",move);
-      let id; const loop=()=>{id=requestAnimationFrame(loop);renderer.render(scene,camera)};loop();
-      const resize=()=>{if(!host.current)return;const nw=host.current.clientWidth,nh=host.current.clientHeight;camera.aspect=nw/nh;camera.updateProjectionMatrix();renderer.setSize(nw,nh)};window.addEventListener("resize",resize);
-      cleanup=()=>{cancelAnimationFrame(id);window.removeEventListener("resize",resize);window.removeEventListener("pointerup",up);window.removeEventListener("pointermove",move);renderer.dispose();renderer.domElement.removeEventListener("pointerdown",down);};
+      const w = host.current.clientWidth || 800;
+      const h = host.current.clientHeight || 520;
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x06111d);
+      const camera = new THREE.PerspectiveCamera(45, w / h, 0.05, 1e6);
+      const renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setSize(w, h);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      host.current.appendChild(renderer.domElement);
+      scene.add(new THREE.HemisphereLight(0x99ddff, 0x112233, 1.9));
+      const key = new THREE.DirectionalLight(0xffffff, 2.1);
+      key.position.set(1, 2, 1.4);
+      scene.add(key);
+
+      const group = new THREE.Group();
+      const exactGeometry = mergeExact(THREE, exactMeshes);
+      if (exactGeometry) {
+        group.add(new THREE.Mesh(exactGeometry, new THREE.MeshStandardMaterial({
+          color: EXACT_COLOR, metalness: 0.35, roughness: 0.55, side: THREE.DoubleSide,
+        })));
+      }
+      const proxyGeometry = mergeProxies(THREE, proxyMeshes);
+      if (proxyGeometry) {
+        group.add(new THREE.Mesh(proxyGeometry, new THREE.MeshStandardMaterial({
+          color: PROXY_COLOR, metalness: 0.2, roughness: 0.7,
+          transparent: true, opacity: 0.55, side: THREE.DoubleSide,
+        })));
+      }
+      scene.add(group);
+
+      // IFC world coordinates are neither centred nor in any predictable unit, so the
+      // camera is fitted to the model's own bounds rather than to fixed numbers.
+      const box = new THREE.Box3().setFromObject(group);
+      const size = box.getSize(new THREE.Vector3());
+      const centre = box.getCenter(new THREE.Vector3());
+      const span = Math.max(size.x, size.y, size.z) || 1;
+      group.position.sub(centre);
+
+      const grid = new THREE.GridHelper(span * 2.2, 24, 0x27527b, 0x16324e);
+      grid.position.y = -size.y / 2;
+      scene.add(grid);
+
+      const radius = box.getBoundingSphere(new THREE.Sphere()).radius || span / 2;
+      let azimuth = 0.9;
+      let elevation = 0.55;
+      let distance = fitDistance(radius, camera.fov, camera.aspect);
+      const applyCamera = () => {
+        elevation = Math.max(0.05, Math.min(Math.PI / 2 - 0.05, elevation));
+        distance = Math.max(radius * 0.15, Math.min(radius * 20, distance));
+        camera.position.set(
+          distance * Math.cos(elevation) * Math.sin(azimuth),
+          distance * Math.sin(elevation),
+          distance * Math.cos(elevation) * Math.cos(azimuth),
+        );
+        camera.lookAt(0, 0, 0);
+      };
+      applyCamera();
+
+      let dragging = false, lastX = 0, lastY = 0;
+      const down = e => { dragging = true; lastX = e.clientX; lastY = e.clientY; };
+      const up = () => { dragging = false; };
+      const move = e => {
+        if (!dragging) return;
+        azimuth -= (e.clientX - lastX) * 0.006;
+        elevation += (e.clientY - lastY) * 0.004;
+        lastX = e.clientX; lastY = e.clientY;
+        applyCamera();
+      };
+      const wheel = e => { e.preventDefault(); distance *= e.deltaY > 0 ? 1.1 : 0.9; applyCamera(); };
+      renderer.domElement.addEventListener("pointerdown", down);
+      renderer.domElement.addEventListener("wheel", wheel, { passive: false });
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointermove", move);
+
+      let frame;
+      const loop = () => { frame = requestAnimationFrame(loop); renderer.render(scene, camera); };
+      loop();
+
+      const resize = () => {
+        if (!host.current) return;
+        const nw = host.current.clientWidth, nh = host.current.clientHeight;
+        camera.aspect = nw / nh;
+        camera.updateProjectionMatrix();
+        renderer.setSize(nw, nh);
+      };
+      window.addEventListener("resize", resize);
+
+      setState({
+        status: "ready",
+        mode: payload.geometry_mode,
+        exact: payload.exact_meshes,
+        elementProxies: payload.element_proxies,
+        spatialProxies: payload.spatial_proxies,
+        triangles,
+        disclaimer: payload.disclaimer,
+      });
+
+      cleanup = () => {
+        cancelAnimationFrame(frame);
+        window.removeEventListener("resize", resize);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointermove", move);
+        renderer.domElement.removeEventListener("pointerdown", down);
+        renderer.domElement.removeEventListener("wheel", wheel);
+        exactGeometry?.dispose();
+        proxyGeometry?.dispose();
+        renderer.dispose();
+      };
     })();
-    return ()=>cleanup();
-  },[entity?.id]);
-  return <div className="viewer" ref={host}><div className="viewer-overlay"><b>{entity?.name || "3D Twin"}</b><br/>{entity?.spatial?.station || "Station 02"} · {entity?.spatial?.zone || "Roof Zone B"}<br/><span style={{color:"#76dfff"}}>Drag to orbit · selected beam highlighted</span></div><div className="viewer-legend"><span className="pill">Geometry</span><span className="pill">4D Ready</span><span className="pill">Evidence Linked</span></div></div>;
+
+    return () => { cancelled = true; cleanup(); };
+  }, [projectId, model?.id]);
+
+  return (
+    <div className="viewer" ref={host}>
+      <div className="viewer-overlay">
+        <b>{model?.title || "No model selected"}</b><br />
+        {state.status === "loading" && "Loading geometry…"}
+        {state.status === "error" && <span className="bad">{state.message}</span>}
+        {state.status === "idle" && "Import an IFC model to see it here."}
+        {state.status === "ready" && (
+          <>
+            {state.exact} exact · {state.elementProxies} proxy element(s)<br />
+            {state.triangles.toLocaleString()} triangles · mode {state.mode}<br />
+            {state.disclaimer
+              ? <span className="warn">{state.disclaimer}</span>
+              : <span style={{ color: "#76dfff" }}>Drag to orbit · scroll to zoom</span>}
+          </>
+        )}
+      </div>
+      {state.status === "ready" && state.elementProxies > 0 && (
+        <div className="viewer-legend">
+          <span className="pill">Exact IFC geometry</span>
+          <span className="pill" style={{ color: "#ffa43b" }}>Proxy box (approximate)</span>
+        </div>
+      )}
+    </div>
+  );
 }

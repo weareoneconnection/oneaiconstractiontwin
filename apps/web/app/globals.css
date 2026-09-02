@@ -387,3 +387,5 @@
 .cpm-step b{color:#ff9d5c;font-size:10px}
 .verdict-line{margin-top:12px;padding:10px 12px;border-left:3px solid var(--cyan);background:rgba(7,20,33,.7);font-size:12.5px;line-height:1.65;color:#c3d8ee}
 .provenance.warn{color:#f0c674}
+
+.table-row.active{background:rgba(79,209,255,.07);box-shadow:inset 2px 0 0 var(--cyan)}

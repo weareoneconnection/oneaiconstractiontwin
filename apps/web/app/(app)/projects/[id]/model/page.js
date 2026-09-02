@@ -10,11 +10,12 @@ import TwinViewer from "../../../../../components/TwinViewer";
 import { useProject } from "../layout";
 
 export default function ModelPage() {
-  const { project, entities, projectId, reload } = useProject();
+  const { project, projectId, reload } = useProject();
   const { can } = useSession();
   const { notify } = useToast();
   const [models, setModels] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [selectedModelId, setSelectedModelId] = useState(null);
   const fileInput = useRef(null);
 
   const loadModels = () => api(`/api/v1/projects/${projectId}/bim/models`).then(setModels).catch(() => setModels([]));
@@ -65,7 +66,12 @@ export default function ModelPage() {
               <span>Model</span><span>Parser</span><span>Elements</span><span>Storage</span><span>Imported</span>
             </div>
             {models.map(model => (
-              <div key={model.id} className="table-row">
+              <div
+                key={model.id}
+                className={`table-row${model.id === (selectedModelId || models[0]?.id) ? " active" : ""}`}
+                onClick={() => setSelectedModelId(model.id)}
+                style={{ cursor: "pointer" }}
+              >
                 <span data-label="Model"><b>{model.title}</b></span>
                 <span data-label="Parser">{model.meta?.parser || "—"}</span>
                 <span data-label="Elements">
@@ -84,10 +90,10 @@ export default function ModelPage() {
         )}
       </Card>
 
-      <Card title="Twin viewer" meta="Interactive demonstration surface over the imported entities">
-        {entities.length === 0
+      <Card title="Twin viewer" meta="Geometry as returned by the API for the selected model">
+        {!models || models.length === 0
           ? <EmptyState title="Nothing to display yet" description="Import an IFC model first." />
-          : <TwinViewer entity={entities[0]} />}
+          : <TwinViewer projectId={projectId} model={models.find(m => m.id === selectedModelId) || models[0]} />}
       </Card>
 
       <CesiumStreamingWorkspace project={project} />
