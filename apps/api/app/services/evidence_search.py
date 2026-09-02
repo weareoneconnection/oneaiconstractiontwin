@@ -147,4 +147,31 @@ def search_evidence(
             results.append(ScoredEvidence(row, round(score * (0.5 + 0.5 * float(row.confidence or 1.0)), 4), matched))
 
     results.sort(key=lambda item: (-item.score, item.evidence.created_at))
-    return results[:limit]
+    return [item for item in results if _is_a_real_match(item, document_frequency, len(rows))][:limit]
+
+
+#: A term carried by most of the corpus ("zone", "site", "works") says nothing about
+#: which record answers a question.
+COMMON_TERM_RATIO = 0.6
+
+#: BM25 scores are unbounded, but a hit this weak is noise at any corpus size.
+MINIMUM_SCORE = 0.35
+
+
+def _is_a_real_match(hit: ScoredEvidence, document_frequency: dict[str, int], corpus_size: int) -> bool:
+    """Reject hits that only coincide on words common to nearly every record.
+
+    On a small corpus BM25's IDF term is too flat to do this on its own: a question
+    about a concrete pour would retrieve three unrelated records because each of them
+    happens to say "Zone". Treating that as evidence is worse than finding nothing —
+    it turns "I have no record of this" into a confident-looking answer.
+    """
+    if hit.score < MINIMUM_SCORE:
+        return False
+    if not hit.matched_terms:
+        return False
+    distinctive = [
+        term for term in hit.matched_terms
+        if document_frequency.get(term, 0) / max(1, corpus_size) < COMMON_TERM_RATIO
+    ]
+    return bool(distinctive)

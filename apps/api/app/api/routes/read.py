@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.core.security import get_context, RequestContext, require
 from app.domain.schemas import ProjectOut, TwinEntityOut
+from app.services.evidence_ingest import IngestError, list_evidence as browse_evidence
 from app.services.read_service import get_project, get_entity, list_activities, list_evidence, list_risks, list_graph, list_actions
 
 router = APIRouter(prefix="/api/v1", tags=["read-model"])
@@ -34,10 +35,20 @@ def activities(project_id: str, db: Session = Depends(get_db), ctx: RequestConte
 
 
 @router.get("/projects/{project_id}/evidence")
-def evidence(project_id: str, db: Session = Depends(get_db), ctx: RequestContext = Depends(get_context)):
+def evidence(
+    project_id: str,
+    source_type: str | None = Query(default=None, description="daily_report, photo, rfi, ncr, inspection…"),
+    q: str | None = Query(default=None, description="Substring match on content or source id"),
+    limit: int = Query(default=500, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    ctx: RequestContext = Depends(get_context),
+):
+    """List project evidence, newest first, optionally filtered by source or text."""
     require(ctx, "twin:read")
-    rows = list_evidence(db, ctx, project_id)
-    return [{"id": r.id, "source_type": r.source_type, "source_id": r.source_id, "fragment": r.fragment, "confidence": r.confidence, "content": r.content, "created_at": r.created_at} for r in rows]
+    try:
+        return browse_evidence(db, ctx, project_id, source_type, q, limit)
+    except IngestError as exc:
+        raise HTTPException(404, str(exc))
 
 
 @router.get("/projects/{project_id}/risks")

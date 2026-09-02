@@ -354,3 +354,36 @@
   .connection-state b{display:inline}
 }
 @media print{.chart .today,.connection-state{display:none}}
+
+/* ===========================================================================
+   Evidence workspace (v0.8)
+   ======================================================================== */
+.source-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:10px}
+.source-card{display:flex;flex-direction:column;justify-content:space-between;gap:12px;padding:13px 14px;border:1px solid var(--line);border-radius:12px;background:#071421}
+.source-card b{display:block;font-size:13px}
+.source-card span{display:block;font-size:11px;color:var(--muted);margin-top:3px;line-height:1.5}
+.source-foot{display:flex;align-items:center;justify-content:space-between;gap:8px}
+
+.import-result{margin-top:12px;padding:11px 13px;border:1px solid #2c735b;border-radius:10px;background:rgba(44,115,91,.1);font-size:12px;line-height:1.6}
+.import-result small{display:block;margin-top:4px;color:#7f9eb6;font-size:10px}
+.import-problems{margin:8px 0 0;padding-left:18px;color:#f0c674;font-size:11px}
+
+.evidence-index{display:flex;flex-direction:column;gap:10px}
+.evidence-row{padding:12px 14px;border:1px solid #173653;border-radius:12px;background:#071421}
+.evidence-row header{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.evidence-row header b{font-size:12px;color:#d8f1ff}
+.evidence-row .confidence{font-size:10px;color:#65e6b4;border:1px solid rgba(101,230,180,.3);border-radius:999px;padding:1px 6px}
+.evidence-row .evidence-date{margin-left:auto;font-size:10px;color:#6f8dab}
+.evidence-row p{margin:8px 0 0;font-size:13px;line-height:1.6}
+.evidence-row footer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:9px;font-size:10px;color:#6f8dab}
+.evidence-photo{display:block;width:100%;max-width:360px;margin-top:9px;border-radius:9px;border:1px solid #173653}
+.image-loading,.image-missing{width:100%;max-width:360px;height:120px;margin-top:9px;border-radius:9px;border:1px dashed #22486d;display:grid;place-items:center;font-size:11px;color:#6f8dab}
+.image-loading{background:rgba(7,20,33,.6)}
+
+/* Critical path strip (v0.8) */
+.cpm-strip{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.cpm-step{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;padding:4px 8px;border-radius:7px;border:1px solid #2a5d8e;background:#071421;color:#bcd8f2}
+.cpm-step.slipped{border-color:#8a6a31;color:#f0c674}
+.cpm-step b{color:#ff9d5c;font-size:10px}
+.verdict-line{margin-top:12px;padding:10px 12px;border-left:3px solid var(--cyan);background:rgba(7,20,33,.7);font-size:12.5px;line-height:1.65;color:#c3d8ee}
+.provenance.warn{color:#f0c674}

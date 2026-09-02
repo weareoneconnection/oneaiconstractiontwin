@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { API, api } from "../../../lib/api";
-import { since } from "../../../lib/format";
+import { dateTime, since } from "../../../lib/format";
 import { useSession } from "../../../lib/session";
 import { Badge, Card, EmptyState, Metric, Skeleton } from "../../../components/ui";
 
@@ -10,6 +10,7 @@ export default function AdminPage() {
   const [report, setReport] = useState(null);
   const [workers, setWorkers] = useState(null);
   const [version, setVersion] = useState(null);
+  const [unconfirmed, setUnconfirmed] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -21,6 +22,13 @@ export default function AdminPage() {
       } catch (e) { setError(e.message); }
       if (can("admin:read")) {
         api("/api/v1/admin/workers").then(setWorkers).catch(() => setWorkers([]));
+      }
+      if (can("action:approve")) {
+        // Actions handed to an executor that never reported back. The twin keeps
+        // "dispatched" and "executed" apart precisely so this list can exist.
+        api("/api/v1/actions/unconfirmed")
+          .then(result => setUnconfirmed(result.actions || []))
+          .catch(() => setUnconfirmed([]));
       }
     };
     load();
@@ -56,6 +64,45 @@ export default function AdminPage() {
           </div>
         )}
       </Card>
+
+      {can("action:approve") && (
+        <Card
+          title="Unconfirmed executions"
+          meta="Approved actions that left the twin and were never confirmed by the executor"
+        >
+          {!unconfirmed && <Skeleton lines={2} />}
+          {unconfirmed?.length === 0 && (
+            <EmptyState
+              title="Nothing outstanding"
+              description="Every dispatched action has been confirmed as executed or failed."
+            />
+          )}
+          {unconfirmed?.length > 0 && (
+            <>
+              <div className="provisional-badge">
+                {unconfirmed.length} action{unconfirmed.length > 1 ? "s" : ""} dispatched without confirmation.
+                The twin does not claim these happened — that is what this list is for.
+              </div>
+              <div className="table">
+                <div className="table-head">
+                  <span>Action</span><span>Project</span><span>Dispatched</span><span>Waiting</span><span>Recipients</span>
+                </div>
+                {unconfirmed.map(action => (
+                  <div key={action.id} className="table-row">
+                    <span data-label="Action"><b>{action.agent || action.id.slice(0, 8)}</b></span>
+                    <span data-label="Project">{action.project_id?.slice(0, 8) || "—"}</span>
+                    <span data-label="Dispatched">{dateTime(action.dispatched_at)}</span>
+                    <span data-label="Waiting" className="warn">{since(action.dispatched_at)}</span>
+                    <span data-label="Recipients">
+                      {(action.recipients || []).map(item => item.address || item.name).join(", ") || "—"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </Card>
+      )}
 
       <Card title="Asset workers" meta="Convert IFC models into 3D Tiles; jobs stay queued without one">
         {!can("admin:read") && <EmptyState title="Not available for your role" description={`${me?.role || "This role"} does not have the admin:read permission.`} />}

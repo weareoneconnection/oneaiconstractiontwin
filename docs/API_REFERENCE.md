@@ -141,3 +141,59 @@ more than one API instance. Without Redis it still works within a single process
 **The socket is an accelerator, never the source of truth.** Clients keep their existing
 polling; the socket only makes updates arrive sooner. A dropped connection degrades
 latency, not correctness.
+
+
+## v0.8 — evidence ingestion and critical path
+
+### Evidence (H1)
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/v1/evidence/source-types` | any | Which record types this deployment ingests, and the column aliases it recognises |
+| POST | `/api/v1/projects/{id}/evidence/import-csv?source_type=…` | `twin:write` | Import daily reports, RFIs, NCRs, inspections or delivery records |
+| POST | `/api/v1/projects/{id}/evidence/photos` | `twin:write` | Register a site photograph (multipart) |
+| GET | `/api/v1/projects/{id}/evidence` | `twin:read` | List evidence, filtered by `source_type` or `q` |
+| GET | `/api/v1/projects/{id}/evidence/coverage` | `twin:read` | Which declared sources this project has, and which it lacks |
+| GET | `/api/v1/projects/{id}/evidence/{evidence_id}/image` | `twin:read` | Tenant-scoped delivery of a photograph |
+
+Three properties are worth knowing before wiring an integration:
+
+- **Re-importing is safe.** Records are keyed by a content hash, so a site system that
+  re-sends the same export daily produces no duplicates; the response reports how many
+  rows it skipped.
+- **Column names are matched by alias.** A `content` column under any of its usual names
+  is required; `date`, `activity_id`, `ifc_guid`, `zone`, `status`, `author` are used when
+  present. Reference columns are also recognised by shape (`report_no`, `ncr_number`, …).
+- **Confidence differs by source.** A signed inspection (0.97) outranks a shift narrative
+  (0.88), and retrieval weights evidence by it. A `confidence` column overrides the default.
+
+Photographs are dated from their own EXIF `DateTimeOriginal` where present — a photo that
+reaches the office three days later is evidence about the day it was taken — and the
+response reports `taken_at_source` as `exif` or `upload-time` so the difference is never
+silent.
+
+### Critical path (H3)
+
+`POST /api/v1/projects/{id}/forecast` now includes a `critical_path` block computed from
+the schedule's own logic links, plus `network_impact_days` and `absorbed_by_float_days`.
+
+Logic arrives with the schedule import: a `predecessors` column in P6/MS Project notation
+(`A1023FS+2, A1030SS-1`). Activity ids containing hyphens are handled — `P-010` is an id,
+not a ten-day negative lag, and a lag is only read where the schedule marks one.
+
+The distinction the previous forecast could not make: slippage is carried along the logic
+and absorbed by **free** float, so total measured slip is normally larger than the days
+that actually reach the project finish. Each late activity reports
+`project_impact_contribution_days` — how many of those days it is responsible for —
+rather than a boolean that would call an absorbed delay "reaching the finish".
+
+Where a schedule carries no logic, the response says so and explains what column to add,
+instead of treating every activity as independent and calling that a critical path.
+Activities with no links are excluded from the disagreement report, since the network
+cannot judge them.
+
+### Reconciliation
+
+`GET /api/v1/actions/unconfirmed` (`action:approve`) lists approved actions that were
+dispatched to an executor and never confirmed. The twin keeps `dispatched` and `executed`
+apart so this list can exist; the platform page renders it.

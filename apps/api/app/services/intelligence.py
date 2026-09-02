@@ -21,10 +21,11 @@ from sqlalchemy.orm import Session
 from app.core.observability import AI_REQUESTS, EVIDENCE_COVERAGE
 from app.core.security import RequestContext
 from app.core.time import utcnow
-from app.domain.models import AgentAction, Evidence, Project, Risk
+from app.domain.models import Activity, AgentAction, Evidence, Project, Risk
 from app.domain.schemas import AskResponse, EvidenceRef, SimulationRequest, SimulationResponse
 from app.integrations.oneai import OneAICoreAdapter
 from app.services.audit import audit
+from app.services.cpm import propagate_delay
 from app.services.evidence_search import search_evidence
 from app.services.events import emit
 from app.services.realtime import hub
@@ -391,6 +392,18 @@ def evaluate_risks(db: Session, ctx: RequestContext, project_id: str) -> tuple[R
 # ---------------------------------------------------------------------- forecast
 
 
+def _network_view(db: Session, ctx: RequestContext, project_id: str) -> dict[str, Any]:
+    """CPM over the imported logic, when the schedule carries any."""
+    activities = db.scalars(
+        select(Activity).where(
+            Activity.project_id == project_id,
+            Activity.tenant_id == ctx.tenant_id,
+            Activity.organization_id == ctx.organization_id,
+        )
+    ).all()
+    return propagate_delay(activities)
+
+
 def forecast_project(
     db: Session, ctx: RequestContext, project_id: str, iterations: int = 1000, seed: int | None = None
 ) -> dict[str, Any]:
@@ -438,8 +451,26 @@ def forecast_project(
         for item in sample.late_activities[:5]
     ]
 
+    # Where the schedule carries logic, the network answer is the defensible one: it is
+    # where a planner would look, and it distinguishes slip that is absorbed by float
+    # from slip that actually moves the finish date.
+    network = _network_view(db, ctx, project_id)
+    propagation = network.get("delay_propagation") if network.get("available") else None
+
     result = {
         "delay_days": {"p10": percentile(0.10), "p50": percentile(0.50), "p90": percentile(0.90)},
+        "critical_path": {
+            "available": bool(network.get("available")),
+            "reason": network.get("reason"),
+            "method": network.get("method"),
+            "project_duration_days": network.get("project_duration_days"),
+            "activities_with_logic": network.get("activities_with_logic"),
+            "path": network.get("critical_path", [])[:25],
+            "disagreements_with_source": network.get("disagreements_with_source", [])[:10],
+            "warnings": network.get("warnings", [])[:10],
+        },
+        "network_impact_days": propagation["project_impact_days"] if propagation else None,
+        "absorbed_by_float_days": propagation["absorbed_by_float_days"] if propagation else None,
         "drivers": drivers,
         "confidence": confidence,
         "iterations": iterations,
@@ -457,6 +488,14 @@ def forecast_project(
         "warning": None
         if sample.data_quality == "sufficient"
         else "Insufficient activity history for a calibrated forecast; treat as indicative only.",
+        "interpretation": (
+            f"Measured slippage totals {propagation['total_measured_slip_days']} days, of which "
+            f"{propagation['absorbed_by_float_days']} days are absorbed by float; "
+            f"{propagation['project_impact_days']} days reach the project finish along the critical path."
+            if propagation
+            else "No schedule logic is available, so the percentiles resample activity variance without "
+                 "tracing where a delay travels. Import a predecessor column for a network-based answer."
+        ),
     }
     audit(db, ctx, "forecast.generate", "project", project_id, project_id, after=result)
     AI_REQUESTS.labels("forecast", "success").inc()

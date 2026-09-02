@@ -18,6 +18,7 @@ from app.api.routes.bim import router as bim_router
 from app.api.routes.collaboration import router as collaboration_router
 from app.api.routes.demo import router as demo_router
 from app.api.routes.enterprise import router as enterprise_router
+from app.api.routes.evidence import router as evidence_router
 from app.api.routes.projects import router as projects_router
 from app.api.routes.realtime import router as realtime_router
 from app.api.routes.public_demo import router as public_demo_router
@@ -95,6 +96,7 @@ app.include_router(v04_router)
 app.include_router(v05_router)
 app.include_router(v06_router)
 app.include_router(enterprise_router)
+app.include_router(evidence_router)
 app.include_router(collaboration_router)
 app.include_router(realtime_router)
 # Mounted last, and only serves anything when PUBLIC_DEMO_ENABLED is set.

@@ -134,23 +134,68 @@ def geometry_for_model(
     if (not path.exists()) and source_key:
         cached = settings.asset_work_path / "source-cache" / f"{(doc.meta or {}).get('sha256') or doc.id}.ifc"
         path = storage.materialize(source_key, cached)
-    if path.exists() and by_guid:
+    # Why a mesh is a proxy matters: "the library is missing" is a deployment problem an
+    # operator must act on, while "this element carries no geometry" is a property of the
+    # model. Telling them to install a library that is already installed sends them to fix
+    # something that is not broken.
+    triangulation_available = True
+    triangulation_error: str | None = None
+    try:
+        import ifcopenshell.geom  # noqa: F401
+    except Exception as exc:
+        triangulation_available = False
+        triangulation_error = str(exc)
+
+    if path.exists() and by_guid and triangulation_available:
         try:
             exact = _ifc_exact_geometry(str(path), by_guid, max_triangles_per_entity=max_triangles_per_entity)
-        except Exception:
+        except Exception as exc:
+            triangulation_error = str(exc)
             exact = []
 
     exact_ids = {m["entity_id"] for m in exact}
-    proxy = [_proxy_box(e, i) for i, e in enumerate(entities) if e.id not in exact_ids]
+    proxy_entities = [entity for entity in entities if entity.id not in exact_ids]
+    proxy = [_proxy_box(entity, index) for index, entity in enumerate(proxy_entities)]
     meshes = exact + proxy
+
+    # Site, building and storey are containers; they have no body geometry by definition
+    # and their proxies are not a gap in the model.
+    SPATIAL = {"site", "building", "storey", "space"}
+    spatial_proxies = sum(1 for entity in proxy_entities if (entity.entity_type or "").lower() in SPATIAL)
+    element_proxies = len(proxy_entities) - spatial_proxies
+
+    if not triangulation_available:
+        disclaimer = (
+            "Exact IFC triangulation is unavailable in this deployment; every mesh is semantic "
+            "proxy geometry. Build the image with INSTALL_IFC=true to enable it."
+            + (f" ({triangulation_error})" if triangulation_error else "")
+        )
+    elif triangulation_error:
+        disclaimer = f"Triangulation failed for this model, so proxy geometry is shown: {triangulation_error}"
+    elif element_proxies:
+        disclaimer = (
+            f"{element_proxies} element(s) carry no geometric representation in this IFC and are shown "
+            "as proxy boxes. This is a property of the model, not of the deployment."
+        )
+    else:
+        disclaimer = None
+
     return {
         "model_document_id": doc.id,
         "title": doc.title,
         "source_sha256": (doc.meta or {}).get("sha256"),
-        "geometry_mode": "ifc-exact" if exact and not proxy else ("hybrid" if exact else "semantic-proxy"),
+        # Spatial containers never carry geometry, so a model whose every *element* is
+        # triangulated reports as exact even though the site node is a proxy.
+        "geometry_mode": (
+            "ifc-exact" if exact and not element_proxies
+            else ("hybrid" if exact else "semantic-proxy")
+        ),
+        "triangulation_available": triangulation_available,
         "exact_meshes": len(exact),
         "proxy_meshes": len(proxy),
+        "element_proxies": element_proxies,
+        "spatial_proxies": spatial_proxies,
         "mesh_count": len(meshes),
         "meshes": meshes,
-        "disclaimer": None if exact and not proxy else "Some or all meshes are semantic proxy geometry. Install IfcOpenShell with geometry support for exact IFC triangulation.",
+        "disclaimer": disclaimer,
     }

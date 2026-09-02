@@ -40,6 +40,16 @@ This is the cumulative, runnable codebase for the OneAI Construction Twin Enterp
 - Docker Compose, Kubernetes, HPA, PDB and network-policy references
 - Enterprise pilot status, checklist and E2E validation script
 
+### Evidence and schedule intelligence (v0.8)
+- Importers for the four site sources the pilot scenario declares: daily reports, photos,
+  RFI/NCR and inspection records — deduplicated, linked to the activity or element they
+  reference, and weighted by how dependable the source is
+- Photographs dated from their own capture metadata, with tenant-scoped delivery
+- Critical path analysis over the schedule's own logic links, distinguishing slippage
+  absorbed by float from slippage that actually moves the finish date
+- Evidence coverage reporting: which declared sources a project still lacks, and therefore
+  which classes of question the twin will correctly refuse to answer
+
 ### Web application
 - Routed workspace: portfolio, cross-project comparison, project overview, BIM & 3D,
   schedule & 4D, intelligence, audit trail, report & export, platform administration

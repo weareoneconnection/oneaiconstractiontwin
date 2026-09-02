@@ -173,6 +173,35 @@ audit chain verifying, unmatched questions downgraded to provisional.
 
 ---
 
+## Exact IFC geometry
+
+Without IfcOpenShell the viewer shows labelled proxy boxes. It is a large dependency, so
+it is a build argument rather than a default:
+
+```
+INSTALL_IFC=true
+```
+
+On Railway, set it under **Settings → Build → Build Arguments** for the `api` and
+`asset-worker` services (the worker triangulates during tile generation, so both need it).
+
+Verified locally on 2026-09-02, linux/arm64:
+
+| | Image size | Result |
+|---|---|---|
+| Default build | 526 MB | Every mesh is a labelled proxy box |
+| `INSTALL_IFC=true` | 867 MB | IfcOpenShell 0.8.5, exact triangulation |
+
+End to end with a model carrying real geometry: `geometry_mode: ifc-exact`, and the tile
+pipeline produced LODs of 12 → 6 → 3 triangles per element from the actual solids.
+
+A model that carries **no** geometric representation still returns proxy boxes, and the
+response now says which case it is — "this element carries no geometry" is a property of
+the model, while "triangulation is unavailable" is something the operator can fix. The
+API reports `triangulation_available`, `element_proxies` and `spatial_proxies` so the two
+are never confused. Site, building and storey nodes are counted separately, because a
+spatial container has no body geometry by definition.
+
 ## What survives a redeploy
 
 | Data | Survives | Why |

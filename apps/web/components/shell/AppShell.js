@@ -105,6 +105,7 @@ export default function AppShell({ children }) {
             <NavLink href={scope} label="Overview" exact />
             <NavLink href={`${scope}/model`} label="BIM & 3D" hint="import · tiles" />
             <NavLink href={`${scope}/schedule`} label="Schedule & 4D" hint="mapping · timeline" />
+            <NavLink href={`${scope}/evidence`} label="Evidence" hint="reports · photos · NCR" />
             <NavLink href={`${scope}/intelligence`} label="Intelligence" hint="ask · risk · forecast" />
             <NavLink href={`${scope}/audit`} label="Audit trail" hint="hash-chained" />
             <NavLink href={`${scope}/report`} label="Report & export" hint="print · csv" />

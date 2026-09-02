@@ -160,6 +160,44 @@ export default function IntelligencePage() {
                 {forecast.model} · {forecast.basis} · {forecast.sample.activities_measured}/{forecast.sample.activities_total} activities ·
                 mean slip {forecast.sample.mean_slip_days} d · {forecast.iterations} iterations
               </Provenance>
+              {forecast.critical_path?.available ? (
+                <div className="list-block">
+                  <b>Critical path · {forecast.critical_path.method}</b>
+                  <div className="cpm-strip">
+                    {forecast.critical_path.path.map(step => (
+                      <span key={step.activity} className={`cpm-step ${step.slip_days > 0 ? "slipped" : ""}`}
+                            title={`${step.name} · ${step.duration_days} d · float ${step.total_float_days} d`}>
+                        {step.activity}
+                        {step.slip_days > 0 && <b>+{step.slip_days}d</b>}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="provenance">
+                    Project duration {forecast.critical_path.project_duration_days} d ·
+                    {" "}{forecast.critical_path.activities_with_logic} activities carry logic ·
+                    {forecast.network_impact_days != null &&
+                      ` ${forecast.network_impact_days} d reach the finish, ${forecast.absorbed_by_float_days} d absorbed by float`}
+                  </div>
+                  {forecast.critical_path.disagreements_with_source?.length > 0 && (
+                    <div className="provisional-badge">
+                      {forecast.critical_path.disagreements_with_source.length} activities where the computed network
+                      disagrees with the imported plan about criticality — neither is assumed correct, but the
+                      difference is worth checking.
+                    </div>
+                  )}
+                  {forecast.critical_path.warnings?.map((warning, index) => (
+                    <div key={index} className="provenance warn">{warning}</div>
+                  ))}
+                </div>
+              ) : (
+                <div className="list-block">
+                  <b>Critical path</b>
+                  <div className="list-item">{forecast.critical_path?.reason || "Not computed."}</div>
+                </div>
+              )}
+
+              {forecast.interpretation && <div className="verdict-line">{forecast.interpretation}</div>}
+
               {forecast.drivers?.length > 0 && (
                 <div className="list-block">
                   <b>Drivers</b>

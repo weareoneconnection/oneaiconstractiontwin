@@ -20,9 +20,16 @@ RUN useradd --create-home --uid 10001 oneai \
     && apt-get install -y --no-install-recommends curl postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-COPY apps/api/requirements.txt apps/api/requirements-prod.txt ./
+COPY apps/api/requirements.txt apps/api/requirements-prod.txt apps/api/requirements-ifc.txt ./
 RUN python -m pip install --upgrade pip \
     && python -m pip install -r requirements-prod.txt
+
+# Exact IFC geometry. Without it the viewer falls back to labelled proxy boxes, which is
+# honest but not usable for a real model review. IfcOpenShell is a large wheel, so it is
+# opt-in per environment: the image builds either way, and the API reports which mode it
+# is in through `geometry_mode`.
+ARG INSTALL_IFC=false
+RUN if [ "$INSTALL_IFC" = "true" ]; then python -m pip install -r requirements-ifc.txt; fi
 
 COPY apps/api/app ./app
 COPY apps/api/alembic ./alembic

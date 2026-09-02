@@ -10,6 +10,51 @@ from app.domain.models import Activity, TwinEntity, MappingRule, GraphRelation, 
 
 DATE_FORMATS = ("%Y-%m-%d", "%d/%m/%Y", "%m/%d/%Y", "%d-%b-%Y")
 
+#: P6 and MS Project write logic as "A1010FS+2, A1020SS-1" — an activity id, an optional
+#: relationship type and an optional lag.
+#:
+#: The hyphen is ambiguous: construction activity ids are routinely "P-010" or "A-1010",
+#: and a naive lag pattern reads that trailing "-010" as a ten-day negative lag. A lag is
+#: therefore only recognised when the schedule marks it as one: after a relationship
+#: type, after whitespace, or with an explicit "+". A bare trailing "-N" belongs to the id.
+PREDECESSOR_RE = re.compile(
+    r"""^\s*
+        (?P<activity>[A-Za-z0-9._][A-Za-z0-9._\-]*?)
+        # A lag written straight after the id is only a lag when a relationship type
+        # says so: "A1010FS-2" is a two-day negative lag, but "P-010" is an activity id.
+        (?:\s*(?P<type>FS|SS|FF|SF)\s*(?P<lag_after_type>[+-]\s*\d+(?:\.\d+)?)?)?
+        (?:
+            \s+(?P<lag_spaced>[+-]?\s*\d+(?:\.\d+)?)   # separated by whitespace
+          | (?P<lag_plus>\+\s*\d+(?:\.\d+)?)           # an explicit plus is unambiguous
+        )?
+        \s*(?:d(?:ays?)?)?\s*$""",
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
+def parse_predecessors(raw: str | None) -> list[dict]:
+    """Turn a predecessor cell into structured links."""
+    if not raw:
+        return []
+    links: list[dict] = []
+    for chunk in re.split(r"[;,]", str(raw)):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        match = PREDECESSOR_RE.match(chunk)
+        if not match:
+            links.append({"activity": chunk, "type": "FS", "lag_days": 0.0, "unparsed": True})
+            continue
+        lag = (
+            match.group("lag_after_type") or match.group("lag_spaced") or match.group("lag_plus") or "0"
+        ).replace(" ", "")
+        links.append({
+            "activity": match.group("activity"),
+            "type": (match.group("type") or "FS").upper(),
+            "lag_days": float(lag),
+        })
+    return links
+
 def _dt(v: str | None):
     if not v: return None
     v = v.strip()
@@ -38,13 +83,24 @@ def import_schedule_csv(db: Session, ctx: RequestContext, project_id: str, raw: 
             percent_complete=pctf,
             total_float_days=float(row.get("total_float_days") or row.get("Total Float") or 0),
             critical=str(row.get("critical") or row.get("Critical") or "").lower() in ("1","true","yes","y"),
+            predecessors=parse_predecessors(
+                row.get("predecessors") or row.get("Predecessors") or row.get("predecessor") or row.get("depends_on")
+            ),
             meta={"source": "csv"},
         )
         db.add(a); created.append(a)
     db.flush()
+    with_logic = sum(1 for a in created if a.predecessors)
     db.add(OutboxEvent(topic="schedule.imported", aggregate_type="project", aggregate_id=project_id, payload={"activities": len(created), "format": "csv"}))
     db.commit()
-    return {"activities_created": len(created), "activity_ids": [a.id for a in created[:100]]}
+    return {
+        "activities_created": len(created),
+        "activities_with_logic": with_logic,
+        # Said plainly: without logic links the forecast can only resample variance, it
+        # cannot trace where a delay travels.
+        "logic_note": None if with_logic else "No predecessor column found — critical path analysis will be unavailable.",
+        "activity_ids": [a.id for a in created[:100]],
+    }
 
 def _tokens(s: str) -> set[str]:
     return {t for t in re.split(r"[^a-z0-9]+", s.lower()) if len(t) > 2}

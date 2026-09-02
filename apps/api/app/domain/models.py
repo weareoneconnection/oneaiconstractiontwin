@@ -66,8 +66,15 @@ class Activity(Base, TenantScoped):
     actual_start: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     actual_finish: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     percent_complete: Mapped[float] = mapped_column(Float, default=0)
+    #: Float and criticality as the *source* schedule reported them. The twin's own CPM
+    #: pass computes these independently and reports both, because a disagreement
+    #: between the imported plan and the network is itself worth seeing.
     total_float_days: Mapped[float] = mapped_column(Float, default=0)
     critical: Mapped[bool] = mapped_column(default=False)
+    #: Logic links, as [{"activity": "A1023", "type": "FS", "lag_days": 2}]. Without
+    #: these a forecast can only resample variance; with them it can traverse the path
+    #: a delay actually travels along.
+    predecessors: Mapped[list] = mapped_column(JSON, default=list)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
 
 
