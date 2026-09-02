@@ -35,6 +35,7 @@ from app.core.time import utcnow
 from app.domain.models import Activity, Evidence, Project, TwinEntity
 from app.services.audit import audit
 from app.services.events import emit
+from app.services.tabular import UnreadableFile, read_table
 from app.services.realtime import hub
 
 DATE_FORMATS = (
@@ -47,6 +48,9 @@ DATE_FORMATS = (
 #: which evidence an answer leans on.
 DEFAULT_CONFIDENCE = {
     "inspection": 0.97,
+    #: A punch list is an outstanding-work record, not a non-conformance: it is a
+    #: maintained working document, so it is dependable but revised often.
+    "punch_list": 0.93,
     "ncr": 0.95,
     "rfi": 0.92,
     "delivery_record": 0.94,
@@ -60,16 +64,18 @@ SOURCE_TYPES = set(DEFAULT_CONFIDENCE) | {"note"}
 #: rejecting a file over a column called "Description" instead of "content" is a bad
 #: trade for a system whose whole problem is not enough evidence.
 COLUMNS: dict[str, tuple[str, ...]] = {
-    "source_id": ("source_id", "id", "reference", "ref", "no", "number", "document_id", "报告编号", "编号"),
-    "content": ("content", "description", "narrative", "text", "body", "summary", "detail", "details", "内容", "描述"),
-    "recorded_at": ("date", "recorded_at", "created_at", "raised_at", "issued_at", "report_date", "日期"),
-    "author": ("author", "reported_by", "raised_by", "inspector", "created_by", "记录人"),
-    "activity_id": ("activity_id", "activity", "wbs", "task_id", "activity_ref"),
+    "source_id": ("source_id", "id", "reference", "ref", "no", "number", "document_id", "报告编号", "编号", "序号"),
+    "content": ("content", "description", "narrative", "text", "body", "summary", "detail", "details",
+                "内容", "描述", "问题描述", "备注", "说明"),
+    "recorded_at": ("date", "recorded_at", "created_at", "raised_at", "issued_at", "report_date",
+                    "日期", "完成安装时间", "完成时间", "检查日期"),
+    "author": ("author", "reported_by", "raised_by", "inspector", "created_by", "记录人", "责任人", "人员配置"),
+    "activity_id": ("activity_id", "activity", "wbs", "task_id", "activity_ref", "工序编号"),
     "entity_guid": ("entity_guid", "ifc_guid", "guid", "element_guid", "element"),
-    "zone": ("zone", "area", "location", "storey", "level", "区域"),
-    "status": ("status", "state", "result", "outcome", "disposition"),
+    "zone": ("zone", "area", "location", "storey", "level", "区域", "部位", "工区", "站点"),
+    "status": ("status", "state", "result", "outcome", "disposition", "状态", "整改情况", "完成情况"),
     "confidence": ("confidence", "reliability"),
-    "title": ("title", "subject", "name", "标题"),
+    "title": ("title", "subject", "name", "标题", "名称", "项目名称", "工作内容"),
 }
 
 
@@ -93,6 +99,30 @@ def _normalize(row: dict[str, Any]) -> dict[str, str]:
         for key, value in row.items()
         if key
     }
+
+
+#: Values that are identifiers or measurements rather than a description of work.
+_NOT_DESCRIPTIVE = ("是", "否", "完成", "未完成", "yes", "no", "done", "n/a", "-")
+
+
+def _longest_text_cell(row: dict[str, Any]) -> tuple[str, str] | None:
+    """Best guess at the column holding an item description: (header, value)."""
+    # Only columns nothing else claims. An author or a date is not a description of
+    # work, and inferring one as the item would produce evidence whose content is a
+    # person's name.
+    claimed = {alias for field, aliases in COLUMNS.items() if field not in ("content", "title") for alias in aliases}
+    best: tuple[str, str] | None = None
+    for key, value in _normalize(row).items():
+        if not value or key in claimed or key.startswith("column_"):
+            continue
+        stripped = value.replace(".", "", 1).replace("%", "").replace("/", "")
+        if stripped.isdigit() or value.lower() in _NOT_DESCRIPTIVE:
+            continue
+        if len(value) < 3 or len(value) > 300:
+            continue
+        if best is None or len(value) > len(best[1]):
+            best = (key, value)
+    return best
 
 
 def _pick(row: dict[str, Any], field: str) -> str:
@@ -121,9 +151,47 @@ def parse_date(value: str) -> datetime | None:
     return None
 
 
-def content_hash(project_id: str, source_type: str, source_id: str, content: str) -> str:
-    """Identity of a record: what it is about, not when it was uploaded."""
-    payload = f"{project_id}|{source_type}|{source_id.strip().lower()}|{' '.join(content.split()).lower()}"
+#: "RS01消项计划表2026/3/11" → RS01. A punch list's title is where the station lives, and
+#: it is the only place: the rows themselves carry a row number and nothing else.
+SHEET_LABEL_RE = re.compile(r"^\s*([A-Za-z]{1,4}[-_]?\d{1,3}|[\u4e00-\u9fff]{2,12}(?:站|工区))")
+
+
+def sheet_context(title_rows: list[str]) -> dict[str, str]:
+    """Site identity carried by the sheet title rather than by its rows.
+
+    Without this every punch list row is just "item 3", indistinguishable from item 3 of
+    every other station — and a question about one station is answered with another
+    station's work. That is a confidently wrong answer, which is worse than no answer.
+    """
+    for line in title_rows:
+        text = (line or "").strip()
+        if not text:
+            continue
+        match = SHEET_LABEL_RE.match(text)
+        label = match.group(1) if match else ""
+        if not label:
+            # Fall back to the leading run before a known document-type word.
+            for marker in ("消项", "销项", "清单", "计划表"):
+                if marker in text:
+                    label = text.split(marker)[0].strip()
+                    break
+        if label:
+            return {"label": label[:24], "title": text[:120]}
+    return {"label": "", "title": title_rows[0][:120] if title_rows else ""}
+
+
+def content_hash(project_id: str, source_type: str, source_id: str, content: str, document: str = "") -> str:
+    """Identity of a record: what it is about, and which document it came from.
+
+    The document belongs in the identity. Two stations' punch lists legitimately contain
+    an item numbered 1 with the same wording, and without this they would collapse into
+    one record — silently losing a station's work. Re-importing the *same* document still
+    deduplicates, because its title is the same.
+    """
+    payload = (
+        f"{project_id}|{source_type}|{document.strip().lower()}|"
+        f"{source_id.strip().lower()}|{' '.join(content.split()).lower()}"
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
@@ -194,6 +262,7 @@ def build_record(
     source_type: str,
     row: dict[str, Any],
     index: int,
+    sheet: dict[str, str] | None = None,
 ) -> tuple[Evidence, str] | tuple[None, str]:
     """Return (evidence, reason). `evidence` is None when the row cannot be used."""
     content = _pick(row, "content")
@@ -201,13 +270,46 @@ def build_record(
     status = _pick(row, "status")
     if not content and title:
         content = title
-    if not content:
-        return None, f"row {index}: no content column (looked for {', '.join(COLUMNS['content'][:4])})"
 
-    source_id = _pick(row, "source_id") or f"{source_type.upper()}-{index}"
+    inferred_from = ""
+    if not content:
+        # No alias list survives contact with real site templates: one project calls the
+        # item column 名称, the next 剩余主要工作内容. Rather than reject the row, take the
+        # longest free-text cell — which is what an item description looks like — and
+        # record which column it came from so the choice is inspectable.
+        candidate = _longest_text_cell(row)
+        if candidate:
+            inferred_from, content = candidate
+
+    if not content:
+        # A site template ships with numbered rows waiting to be filled in. Those are not
+        # ingestion failures, and reporting them as such makes a clean import look broken.
+        filled = {key: value for key, value in _normalize(row).items() if value}
+        only_identifier = filled and all(key in COLUMNS["source_id"] for key in filled)
+        if only_identifier or not filled:
+            return None, "blank"
+        return None, (
+            f"row {index}: no usable description. Looked for a column named "
+            f"{', '.join(COLUMNS['content'][:3])} and found no free text in the row either."
+        )
+
+    sheet = sheet or {"label": "", "title": ""}
+    raw_id = _pick(row, "source_id") or str(index)
+    normalized_id = raw_id[:-2] if raw_id.endswith(".0") else raw_id
+
+    # A document that numbers its own records (DR-302, NCR-118) already has a citable
+    # identifier and keeps it. A bare row number does not: "[3]" would mean item 3 of
+    # nine different stations, so it is qualified by the sheet it came from.
+    is_bare_row_number = normalized_id.replace(".", "", 1).isdigit()
+    if not is_bare_row_number:
+        source_id = normalized_id
+    elif sheet["label"]:
+        source_id = f"{sheet['label']}-{normalized_id}"
+    else:
+        source_id = f"{source_type.upper()}-{normalized_id}"
     recorded_at = parse_date(_pick(row, "recorded_at"))
     author = _pick(row, "author")
-    zone = _pick(row, "zone")
+    zone = _pick(row, "zone") or sheet["label"]
     links = _resolve_links(db, ctx, project_id, _pick(row, "activity_id"), _pick(row, "entity_guid"))
 
     try:
@@ -225,6 +327,21 @@ def build_record(
         parts.append(f"Status: {status}.")
     if zone:
         parts.append(f"Location: {zone}.")
+
+    # Anything else the sheet carries is appended as "label: value". A punch list's
+    # meaning lives in columns nobody can enumerate in advance — "材料是/否已下单",
+    # "完成安装时间" — and dropping them would leave rows that cannot answer the
+    # question they exist to answer.
+    normalized = _normalize(row)
+    used = {alias for aliases in COLUMNS.values() for alias in aliases}
+    extras = [
+        f"{key.replace('_', ' ')}: {value}"
+        for key, value in normalized.items()
+        if value and key not in used and not key.startswith("column_") and len(value) < 120
+    ]
+    if extras:
+        parts.append("(" + "; ".join(extras[:10]) + ")")
+
     full_content = " ".join(part.strip() for part in parts if part.strip())
 
     evidence = Evidence(
@@ -235,45 +352,53 @@ def build_record(
         source_id=source_id,
         content=full_content,
         confidence=confidence,
-        hash=content_hash(project_id, source_type, source_id, full_content),
+        hash=content_hash(project_id, source_type, source_id, full_content, sheet["title"]),
         fragment={
             "title": title or None,
             "status": status or None,
             "author": author or None,
             "zone": zone or None,
             "recorded_at": recorded_at.isoformat() if recorded_at else None,
+            "sheet_title": sheet["title"] or None,
             "links": links,
             "ingested_at": utcnow().isoformat(),
-            "importer": "csv",
+            "importer": "table",
+            # Set when no known column name matched and the description was inferred.
+            "content_column_inferred": inferred_from or None,
         },
     )
     return evidence, "ok"
 
 
-def import_evidence_csv(
-    db: Session, ctx: RequestContext, project_id: str, source_type: str, raw: bytes
+def import_evidence_table(
+    db: Session, ctx: RequestContext, project_id: str, source_type: str, raw: bytes, filename: str = "upload.csv"
 ) -> dict[str, Any]:
+    """Import a CSV or Excel export as evidence."""
     _project(db, ctx, project_id)
     if source_type not in SOURCE_TYPES:
         raise IngestError(f"Unsupported source type '{source_type}'. Use one of: {', '.join(sorted(SOURCE_TYPES))}")
 
-    text = raw.decode("utf-8-sig", errors="replace")
-    reader = csv.DictReader(io.StringIO(text))
-    if not reader.fieldnames:
-        raise IngestError("The file has no header row, so its columns cannot be identified.")
+    try:
+        table = read_table(raw, filename)
+    except UnreadableFile as exc:
+        raise IngestError(str(exc))
 
+    sheet = sheet_context([" ".join(cell for cell in title if cell) for title in table["title_rows"]])
     seen = _existing_hashes(db, ctx, project_id)
     created: list[Evidence] = []
     duplicates = 0
     skipped: list[str] = []
+    blank_rows = 0
     linked = 0
 
-    for index, row in enumerate(reader, start=1):
+    for index, row in enumerate(table["records"], start=1):
         if not any(str(value or "").strip() for value in row.values()):
             continue
-        evidence, reason = build_record(db, ctx, project_id, source_type, row, index)
+        evidence, reason = build_record(db, ctx, project_id, source_type, row, index, sheet)
         if evidence is None:
-            if len(skipped) < 20:
+            if reason == "blank":
+                blank_rows += 1
+            elif len(skipped) < 20:
                 skipped.append(reason)
             continue
         if evidence.hash in seen:
@@ -290,7 +415,8 @@ def import_evidence_csv(
          {"source_type": source_type, "created": len(created), "duplicates": duplicates})
     audit(db, ctx, "evidence.import", "project", project_id, project_id,
           after={"source_type": source_type, "created": len(created), "duplicates": duplicates,
-                 "skipped": len(skipped), "linked": linked, "columns": reader.fieldnames})
+                 "skipped": len(skipped), "blank_rows": blank_rows, "linked": linked, "columns": table["header"],
+                 "format": table["format"], "sheet": table["sheet"]})
     db.commit()
 
     hub.publish(ctx.tenant_id, project_id, "evidence.imported",
@@ -301,8 +427,17 @@ def import_evidence_csv(
         "created": len(created),
         "duplicates_skipped": duplicates,
         "unusable_rows": len(skipped),
+        #: Numbered-but-empty template rows. Counted, not reported as problems.
+        "blank_template_rows": blank_rows,
         "linked_to_project_records": linked,
-        "detected_columns": reader.fieldnames,
+        "detected_columns": table["header"],
+        "format": table["format"],
+        "sheet": table["sheet"],
+        "header_row": table["header_row"],
+        # Whatever sat above the header — usually a title carrying the site and date.
+        "title_rows": [" ".join(cell for cell in row if cell) for row in table["title_rows"][:2]],
+        #: What every record from this file was attributed to.
+        "sheet_label": sheet["label"],
         # Named explicitly so an uploader can fix the file rather than guess.
         "problems": skipped,
         "evidence_ids": [row.id for row in created[:100]],

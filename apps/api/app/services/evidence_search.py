@@ -32,6 +32,15 @@ STOPWORDS = frozenset(
 
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 
+#: CJK text carries no spaces, so a whitespace/ASCII tokenizer produces nothing at all
+#: for a Chinese site record — the retrieval layer was silently blind to every project
+#: that keeps its records in Chinese. Character bigrams are the standard answer when a
+#: word segmenter is not available: they need no dictionary, no dependency, and they
+#: match the way people actually phrase questions ("材料未到" against "材料未到货").
+CJK_RE = re.compile(
+    r"[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u30ff\uac00-\ud7af]+"
+)
+
 # A small, explicit construction vocabulary. Question wording and site-record wording
 # rarely coincide ("why is it delayed" vs "installation suspended"), and without this
 # the retriever misses records that plainly answer the question. The map is lexical
@@ -69,8 +78,20 @@ def expand(terms: list[str]) -> list[str]:
     return expanded
 
 
+def _cjk_grams(run: str) -> list[str]:
+    """Character bigrams, plus the single character when the run is one long."""
+    if len(run) == 1:
+        return [run]
+    return [run[index:index + 2] for index in range(len(run) - 1)]
+
+
 def tokenize(text: str) -> list[str]:
-    return [t for t in TOKEN_RE.findall((text or "").lower()) if t not in STOPWORDS and len(t) > 1]
+    """Latin words and CJK character bigrams, in one token stream."""
+    lowered = (text or "").lower()
+    tokens = [t for t in TOKEN_RE.findall(lowered) if t not in STOPWORDS and len(t) > 1]
+    for run in CJK_RE.findall(lowered):
+        tokens.extend(_cjk_grams(run))
+    return tokens
 
 
 @dataclass

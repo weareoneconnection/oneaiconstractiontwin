@@ -127,7 +127,39 @@ def test_an_unusable_row_is_reported_rather_than_silently_dropped():
         result = upload_csv(client, project_id, head, "note", "id,author\nX-1,someone\nX-2,someone else\n").json()
         assert result["created"] == 0
         assert result["unusable_rows"] == 2
-        assert "no content column" in result["problems"][0]
+        # The message says what was looked for, so the uploader can fix the file.
+        assert "no usable description" in result["problems"][0]
+        assert "description" in result["problems"][0]
+
+
+def test_numbered_but_empty_template_rows_are_not_reported_as_failures():
+    """Site templates ship with blank numbered rows; counting them as errors makes a
+    clean import look broken."""
+    with TestClient(app) as client:
+        head = headers("blank-tenant", "blank-org")
+        project_id = seed(client, "blank-tenant", "blank-org")
+        body = "序号,名称\n1,围栏安装\n2,沥青路面\n3,\n4,\n5,\n"
+        result = upload_csv(client, project_id, head, "punch_list", body).json()
+        assert result["created"] == 2
+        assert result["blank_template_rows"] == 3
+        assert result["unusable_rows"] == 0
+        assert result["problems"] == []
+
+
+def test_an_unrecognised_item_column_is_inferred_and_disclosed():
+    """No alias list survives real site templates: one calls it 名称, the next
+    剩余主要工作内容."""
+    with TestClient(app) as client:
+        head = headers("infer-tenant", "infer-org")
+        project_id = seed(client, "infer-tenant", "infer-org")
+        body = "序号,剩余主要工作内容,计划完成时间\n1,围栏安装,4.11\n"
+        result = upload_csv(client, project_id, head, "punch_list", body).json()
+        assert result["created"] == 1
+
+        rows = client.get(f"/api/v1/projects/{project_id}/evidence?source_type=punch_list", headers=head).json()
+        assert "围栏安装" in rows[0]["content"]
+        # Which column was guessed is recorded, so the choice can be checked.
+        assert rows[0]["fragment"]["content_column_inferred"] == "剩余主要工作内容"
 
 
 def test_an_unknown_source_type_names_the_supported_ones():

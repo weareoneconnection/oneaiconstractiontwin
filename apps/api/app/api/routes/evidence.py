@@ -15,7 +15,7 @@ from app.services.evidence_ingest import (
     SOURCE_TYPES,
     IngestError,
     coverage,
-    import_evidence_csv,
+    import_evidence_table,
     parse_date,
     store_photo_evidence,
 )
@@ -46,20 +46,23 @@ def source_types():
 
 
 @router.post("/projects/{project_id}/evidence/import-csv")
-async def import_csv(
+async def import_table(
     project_id: str,
     source_type: str = Query(..., description="daily_report, rfi, ncr, inspection, delivery_record or note"),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     ctx: RequestContext = Depends(get_context),
 ):
-    """Import site records as retrievable evidence. Re-importing a file is safe."""
+    """Import site records as retrievable evidence, from CSV or Excel.
+
+    Re-importing a file is safe: records are keyed by content, not by upload.
+    """
     require(ctx, "twin:write")
     raw = await file.read()
     if not raw:
         raise HTTPException(400, "The uploaded file is empty.")
     try:
-        return import_evidence_csv(db, ctx, project_id, source_type, raw)
+        return import_evidence_table(db, ctx, project_id, source_type, raw, file.filename or "upload.csv")
     except IngestError as exc:
         raise HTTPException(404 if "not found" in str(exc).lower() else 400, str(exc))
 

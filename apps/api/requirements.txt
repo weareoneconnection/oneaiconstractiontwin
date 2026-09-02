@@ -6,6 +6,10 @@ pydantic==2.9.2
 pydantic-settings==2.5.2
 psycopg[binary]==3.2.13
 python-multipart==0.0.12
+# Site systems export Excel, not CSV. Both formats are read directly rather than
+# asking a site engineer to convert files before the twin will accept them.
+openpyxl==3.1.5
+xlrd==2.0.1
 httpx==0.27.2
 redis==5.0.8
 boto3==1.35.24

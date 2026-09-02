@@ -15,6 +15,7 @@ const SOURCES = [
   { key: "rfi", label: "RFI", hint: "Requests for information" },
   { key: "ncr", label: "NCR", hint: "Non-conformance records" },
   { key: "inspection", label: "Inspections", hint: "Signed acceptance records" },
+  { key: "punch_list", label: "Punch lists", hint: "Outstanding work per station or zone" },
 ];
 
 const CSV_SOURCES = SOURCES.filter(source => source.key !== "photo");

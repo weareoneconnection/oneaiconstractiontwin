@@ -37,7 +37,13 @@ RISK_MODEL = "heuristic-schedule-v0.7.1"
 FORECAST_MODEL = "monte-carlo-activity-variance-v0.7.1"
 
 
-CITATION_RE = re.compile(r"\[([A-Za-z0-9][A-Za-z0-9._\-/]{1,63})\]")
+#: Record identifiers are not always ASCII: a Chinese site names its punch list
+#: "巴西富地站-3". An ASCII-only pattern left every such citation unchecked — the guard
+#: against fabricated sources was silently off for the projects that need it most.
+CITATION_RE = re.compile(
+    r"\[([\w\u4e00-\u9fff\u3400-\u4dbf][\w\u4e00-\u9fff\u3400-\u4dbf._\-/]{1,63})\]",
+    re.UNICODE,
+)
 
 
 def verify_citations(answer: str, supplied_ids: list[str]) -> dict[str, Any]:
