@@ -27,7 +27,11 @@ export default function ModelPage() {
       const form = new FormData();
       form.append("file", file);
       const result = await api(`/api/v1/projects/${projectId}/bim/import-ifc`, { method: "POST", body: form });
-      notify(`Imported ${result.element_count ?? "?"} elements with the ${result.parser} parser`, "success");
+      if (result.truncated) {
+        notify(result.truncation_notice, "error");
+      } else {
+        notify(`Imported ${result.element_count ?? "?"} elements with the ${result.parser} parser`, "success");
+      }
       await Promise.all([loadModels(), reload()]);
     } catch (error) {
       notify(error.message, "error");
@@ -64,7 +68,14 @@ export default function ModelPage() {
               <div key={model.id} className="table-row">
                 <span data-label="Model"><b>{model.title}</b></span>
                 <span data-label="Parser">{model.meta?.parser || "—"}</span>
-                <span data-label="Elements">{model.meta?.element_count ?? 0}</span>
+                <span data-label="Elements">
+                  {model.meta?.element_count ?? 0}
+                  {model.meta?.truncated ? (
+                    <b className="bad" title={`This file holds ${model.meta.elements_in_file} elements. The import stopped at ${model.meta.element_count}, so the twin is incomplete.`}>
+                      {" "}of {model.meta.elements_in_file} — incomplete
+                    </b>
+                  ) : null}
+                </span>
                 <span data-label="Storage">{model.meta?.storage_backend || "—"}</span>
                 <span data-label="Imported">{dateTime(model.created_at)}</span>
               </div>

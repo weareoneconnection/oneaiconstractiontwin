@@ -29,11 +29,23 @@ def _entity_type(ifc_type: str) -> str:
     if any(x in t for x in ("FLOW", "FURNISHING")): return "equipment"
     return "element"
 
-def _fallback_parse(text: str, limit: int = 5000) -> list[dict[str, Any]]:
+# A cap has to exist so one pathological file cannot exhaust the process, but a cap that
+# silently drops elements is worse than no cap: the twin then reports a model as fully
+# imported while part of the building is missing, and nothing downstream can tell. Every
+# parser therefore returns how many elements the file actually held, so truncation is
+# recorded and surfaced rather than absorbed.
+MAX_IMPORT_ELEMENTS = 50_000
+
+def _fallback_parse(text: str, limit: int | None = None) -> tuple[list[dict[str, Any]], int]:
+    limit = MAX_IMPORT_ELEMENTS if limit is None else limit
     rows: list[dict[str, Any]] = []
+    available = 0
     for m in PRODUCT_RE.finditer(text):
         ifc_type = m.group("type").upper()
         if not ifc_type.startswith(SUPPORTED_PREFIXES):
+            continue
+        available += 1
+        if len(rows) >= limit:
             continue
         body = m.group("body")
         nm = NAME_RE.search(body)
@@ -46,21 +58,25 @@ def _fallback_parse(text: str, limit: int = 5000) -> list[dict[str, Any]]:
             "properties": {},
             "storey": None,
         })
-        if len(rows) >= limit: break
-    return rows
+    return rows, available
 
-def _ifcopenshell_parse(path: str, limit: int = 5000) -> list[dict[str, Any]]:
+def _ifcopenshell_parse(path: str, limit: int | None = None) -> tuple[list[dict[str, Any]], int]:
     import ifcopenshell  # optional dependency
     model = ifcopenshell.open(path)
+    limit = MAX_IMPORT_ELEMENTS if limit is None else limit
     rows: list[dict[str, Any]] = []
+    available = 0
     products = model.by_type("IfcProduct")
     for p in products:
         if not getattr(p, "GlobalId", None):
             continue
-        info = p.get_info(recursive=False)
         typ = p.is_a().upper()
         if typ.startswith(("IFCPROJECT", "IFCGEOMETRIC", "IFCANNOTATION")):
             continue
+        available += 1
+        if len(rows) >= limit:
+            continue
+        info = p.get_info(recursive=False)
         storey = None
         try:
             for rel in getattr(p, "ContainedInStructure", []) or []:
@@ -86,21 +102,23 @@ def _ifcopenshell_parse(path: str, limit: int = 5000) -> list[dict[str, Any]]:
             "properties": props,
             "storey": storey,
         })
-        if len(rows) >= limit: break
-    return rows
+    return rows, available
 
-def parse_ifc(path: str) -> tuple[str, list[dict[str, Any]]]:
+def parse_ifc(path: str) -> tuple[str, list[dict[str, Any]], int]:
+    """Return the parser used, the elements imported, and how many the file held."""
     try:
-        rows = _ifcopenshell_parse(path)
+        rows, available = _ifcopenshell_parse(path)
         if rows:
-            return "ifcopenshell", rows
+            return "ifcopenshell", rows, available
     except Exception:
         pass
     text = Path(path).read_text(encoding="utf-8", errors="ignore")
-    return "step-fallback", _fallback_parse(text)
+    rows, available = _fallback_parse(text)
+    return "step-fallback", rows, available
 
 def ingest_ifc(db: Session, ctx: RequestContext, project_id: str, path: str, original_name: str) -> dict[str, Any]:
-    parser, rows = parse_ifc(path)
+    parser, rows, available = parse_ifc(path)
+    truncated = available > len(rows)
     digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
     safe_name = re.sub(r"[^A-Za-z0-9._-]+", "_", Path(original_name).name or "model.ifc")
     source_object_key = f"sources/{ctx.tenant_id}/{project_id}/{digest}/{safe_name}"
@@ -108,7 +126,11 @@ def ingest_ifc(db: Session, ctx: RequestContext, project_id: str, path: str, ori
     doc = Document(
         tenant_id=ctx.tenant_id, organization_id=ctx.organization_id, project_id=project_id,
         doc_type="ifc_model", title=original_name, uri=path,
-        meta={"sha256": digest, "parser": parser, "element_count": len(rows), "source_object_key": source_object_key, "storage_backend": storage.backend},
+        meta={
+            "sha256": digest, "parser": parser, "element_count": len(rows),
+            "elements_in_file": available, "truncated": truncated,
+            "source_object_key": source_object_key, "storage_backend": storage.backend,
+        },
     )
     db.add(doc); db.flush()
     created: list[TwinEntity] = []
@@ -134,4 +156,13 @@ def ingest_ifc(db: Session, ctx: RequestContext, project_id: str, path: str, ori
     db.add(OutboxEvent(topic="bim.model.imported", aggregate_type="project", aggregate_id=project_id,
                        payload={"document_id": doc.id, "filename": original_name, "parser": parser, "entities": len(created)}))
     db.commit()
-    return {"model_document_id": doc.id, "filename": original_name, "sha256": digest, "parser": parser, "entities_created": len(created), "entity_ids": [e.id for e in created[:100]]}
+    return {
+        "model_document_id": doc.id, "filename": original_name, "sha256": digest, "parser": parser,
+        "element_count": len(created), "entities_created": len(created),
+        "elements_in_file": available, "truncated": truncated,
+        "truncation_notice": (
+            f"Only {len(created)} of {available} elements were imported: this model exceeds "
+            f"the {MAX_IMPORT_ELEMENTS}-element import limit, so the twin is incomplete."
+        ) if truncated else None,
+        "entity_ids": [e.id for e in created[:100]],
+    }
